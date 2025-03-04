@@ -1,11 +1,11 @@
-from config import AWSConfig
-from typing import Callable
-from enum import Enum
-from dataclasses import dataclass
-from typing import Any
 from copy import deepcopy
-from conditions import Ref, Condition
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
+from typing import Any, Callable
+
+from airfunctions.conditions import Condition, Ref
+from airfunctions.config import AWSConfig
 
 
 class AWSResource(str, Enum):
