@@ -1,9 +1,6 @@
 import operator
-import sys
 from dataclasses import dataclass
 from typing import Any
-
-ModuleType = type(sys)
 
 
 def get_nested_value(data: dict, path: str, default: Any | None = None, delimiter: str = ".") -> Any:
@@ -21,40 +18,40 @@ class Ref:
     attr_name: str
 
     def __eq__(self, o: object) -> object:
-        return Condition(operator.eq, a=self.attr_name, b=o)
+        return Condition(operator.eq, a=self, b=o)
 
     def __ne__(self, o: object) -> object:
-        return Condition(operator.ne, a=self.attr_name, b=o)
+        return Condition(operator.ne, a=self, b=o)
 
     def is_(self, o: object) -> object:
-        return Condition(operator.is_, a=self.attr_name, b=o)
+        return Condition(operator.is_, a=self, b=o)
 
     def is_not(self, o: object) -> object:
-        return Condition(operator.is_not, a=self.attr_name, b=o)
+        return Condition(operator.is_not, a=self, b=o)
 
     def is_in(self, o: object) -> object:
-        return Condition(operator.contains, a=self.attr_name, b=self)
+        return Condition(operator.contains, a=self, b=self)
 
     def __and__(self, o: object) -> object:
-        return Condition(operator.and_, a=self.attr_name, b=o)
+        return Condition(operator.and_, a=self, b=o)
 
     def __or__(self, o: object) -> object:
-        return Condition(operator.or_, a=self.attr_name, b=o)
+        return Condition(operator.or_, a=self, b=o)
 
     def __lt__(self, o: object) -> object:
-        return Condition(operator.lt, a=self.attr_name, b=o)
+        return Condition(operator.lt, a=self, b=o)
 
     def __le__(self, o: object) -> object:
-        return Condition(operator.le, a=self.attr_name, b=o)
+        return Condition(operator.le, a=self, b=o)
 
     def __ge__(self, o: object) -> object:
-        return Condition(operator.ge, a=self.attr_name, b=o)
+        return Condition(operator.ge, a=self, b=o)
 
     def __gt__(self, o: object) -> object:
-        return Condition(operator.gt, a=self.attr_name, b=o)
+        return Condition(operator.gt, a=self, b=o)
 
     def __invert__(self) -> object:
-        return Condition(operator.not_, a=self.attr_name)
+        return Condition(operator.not_, a=self)
 
 
 @dataclass(frozen=True)
@@ -124,9 +121,11 @@ class Condition:
     @staticmethod
     def parse_arg(arg: Any) -> str:
         if isinstance(arg, Condition):
-            return arg.jsonata(top=False)
+            return f"({arg.jsonata(top=False)})"
         elif isinstance(arg, str) and not arg.startswith("$"):
             return '"' + str(arg) + '"'
+        elif isinstance(arg, Ref):
+            return f"${arg.attr_name}"
         else:
             return str(arg)
 
@@ -141,17 +140,17 @@ class Condition:
 
     def evaluate(self, event: dict, context: Any) -> bool:
         if self.b is None:
-            a = self._eval_val(self.a, event)
+            a = self._eval_val(self.a, event, context)
             return self.operator(a)
         else:
-            a = self._eval_val(self.a, event)
-            b = self._eval_val(self.b, event)
+            a = self._eval_val(self.a, event, context)
+            b = self._eval_val(self.b, event, context)
             return self.operator(a, b)
 
     @staticmethod
-    def _eval_val(val, event: dict) -> Any:
+    def _eval_val(val, event: dict, context: object) -> Any:
         if isinstance(val, Condition):
-            return val.evaluate(event)
+            return val.evaluate(event, context)
         elif isinstance(val, Ref):
             return get_nested_value(event, val.attr_name)
         elif isinstance(val, str) and val.startswith("$"):

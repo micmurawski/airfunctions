@@ -1295,5 +1295,7 @@ if __name__ == "__main__":
     test_intrinsic_functions()
     test_payload_template()
     test_jsonpath_for_aws_states()
-
+    jsonpath = JSONPath()
+    res = jsonpath.apply("$.resultadosParalelos" ,{"resultadosParalelos": [1,2,3]})
+    raise Exception(res)
     print("All tests passed! JSONPath implementation is working correctly.")

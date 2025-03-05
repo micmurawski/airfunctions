@@ -5,13 +5,15 @@ from pathlib import Path
 from typing import Any, Callable
 
 from airfunctions.conditions import Condition, Ref
-from airfunctions.config import AWSConfig
+from airfunctions.config import AirFunctionsConfig
+from airfunctions.context import ContextManager
+from airfunctions.jsonpath import JSONPath
 
 
 class AWSResource(str, Enum):
-    AWS_LAMBDA = "arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:${FUNCTION_NAME}"
+    AWS_LAMBDA = "arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:${prefix}${FUNCTION_NAME}${suffix}"
     AWS_STATES_LAMBDA_INVOKE = "arn:aws:states:::lambda:invoke"
-    AWS_STEP_FUNCTIONS = "arn:aws:states:${AWS_REGION}:${AWS_ACCOUNT_ID}:stateMachine:${STATE_MACHINE}"
+    AWS_STEP_FUNCTIONS = "arn:aws:states:${AWS_REGION}:${AWS_ACCOUNT_ID}:stateMachine:${prefix}${STATE_MACHINE}${suffix}"
 
 
 @dataclass(frozen=True, init=True)
@@ -33,6 +35,10 @@ class Branch:
             self.steps[tail.name] = tail
             self.steps[tail.name].branch = self
 
+    def add_step(self, step):
+        self.steps[step.name] = step
+        step.branch = self
+
     def __getitem__(self, key: str):
         return self.steps[key]
 
@@ -48,26 +54,20 @@ class Branch:
             raise ValueError(
                 f"End of branch {_tail} needs to be attached."
             )
-        if isinstance(nxt, Choice):
-            choices = deepcopy(list(_nxt.choices.values()))
-
+        if isinstance(_nxt, Choice):
+            choices = deepcopy(list(_nxt.branch.steps.values()))
             for c in choices:
                 _steps[c.name] = c
-
-            if _nxt.default:
-                _default = deepcopy(nxt.default)
-                _steps[_default.name] = _default
-        if isinstance(nxt, Branch):
+        elif isinstance(nxt, Branch):
             _steps = {**_steps, **_nxt.steps}
         else:
             _steps[_nxt.name] = _nxt
 
         _tail.set_next(_nxt)
         _tail = _nxt
-        new_branch = Branch(_head, _tail, _steps)
-
-        for k in new_branch.steps:
-            new_branch.steps[k].branch = new_branch
+        new_branch = Branch(_head, _tail)
+        for _, _step in _steps.items():
+            new_branch.add_step(_step)
         return new_branch
 
     def __repr__(self):
@@ -83,6 +83,30 @@ class Branch:
             "StartAt": self.head.name,
             "States": dict((k, v._content) for k, v in self.steps.items()),
         }
+
+    @staticmethod
+    def __call_choice(curr, event, context):
+        con: Condition
+        for con, step_name in curr.choices.items():
+            if con.evaluate(event, context):
+                return curr.branch.steps[step_name]
+        return curr.branch.steps[curr.default]
+
+    def __call__(self, event: dict, context: Any):
+        curr: Step = self.head
+        _in = event
+        _context = context
+        while True:
+            _in = curr._parse_input(_in)
+            if isinstance(curr, Choice):
+                curr = self.__call_choice(curr, _in, context)
+                continue
+            _out = curr(_in, _context)
+            _in = curr._parse_output(_out)
+            if curr.end:
+                break
+            curr = self.steps[curr.next]
+        return _in
 
 
 class Step:
@@ -117,6 +141,40 @@ class Step:
 
         self.branch = branch
         self.catchers: dict[tuple[str], Step] = {}
+
+    @property
+    def input_path(self):
+        return self._content.get("InputPath")
+
+    @property
+    def result_path(self):
+        return self._content.get("ResultPath")
+
+    @property
+    def output_path(self):
+        return self._content.get("OutputPath")
+
+    def _parse_input(self, input_data) -> Any:
+        jsonpath = JSONPath()
+        if getattr(self, "input_path", None):
+            effective_input = jsonpath.apply(self.input_path, input_data)
+        else:
+            effective_input = input_data
+
+        if getattr(self, "parameters", None):
+            return jsonpath.process_payload_template(self.parameters, effective_input)
+        return effective_input
+
+    def _parse_output(self, output_data) -> Any:
+        jsonpath = JSONPath()
+        if getattr(self, "result_path", None):
+            effective_output = jsonpath.apply(self.result_path, output_data)
+        else:
+            effective_output = output_data
+
+        if getattr(self, "output_path", None):
+            return jsonpath.apply(self.output_path, effective_output)
+        return effective_output
 
     @property
     def end(self) -> bool:
@@ -160,7 +218,14 @@ class Step:
                 return Branch(head=self, tail=pnext)
         return _next
 
-    def retry(self, error_equals: list[str, Exception] | Exception | str, interval_seconds: int, max_attempts: int, max_delay_seconds: int | None = None, back_off_rate: float | None = None):
+    def retry(
+        self,
+        error_equals: list[str, Exception] | Exception | str,
+        interval_seconds: int,
+        max_attempts: int,
+        max_delay_seconds: int | None = None,
+        back_off_rate: float | None = None
+    ):
         if "Retry" not in self._content:
             self._content["Retry"] = []
 
@@ -220,7 +285,8 @@ class Step:
 
 
 class Task(Step):
-    def __init__(self, name: str,
+    def __init__(self,
+                 name: str,
                  resource: str = AWSResource.AWS_LAMBDA.value,
                  parameters: dict | None = None,
                  query_language: str | None = None,
@@ -230,21 +296,17 @@ class Task(Step):
         super().__init__(name, "Task", query_language, input_path,
                          result_path, output_path, comment, **kwargs)
 
-        if parameters:
-            self.parameters = parameters
-        else:
-            self.parameters = {}
-
+        self.parameters = parameters
         self.resource = resource
-        self._content.update(
-            {
-                "Resource": self.resource,
-                "Parameters": self.parameters
-            }
-        )
+        self._content["Resource"] = self.resource
+
+        if self.parameters:
+            self._content["Parameters"] = self.parameters
 
 
 class Choice(Step):
+    end = False
+
     def __init__(self,
                  name: str,
                  query_language: str | None = None,
@@ -254,36 +316,32 @@ class Choice(Step):
         super().__init__(name, "Choice", query_language,
                          input_path, None, None, comment, **kwargs)
         self._content.pop("End", None)
-        self.default = default
 
-        self.choices = {}
+        self.choices: dict[Condition, str] = {}
         self._content["Choices"] = []
 
-        self.default = default
+        self.branch = Branch(head=self, tail=self)
+        self.branch.add_step(default)
+        self.default = default.name
         if self.default:
-            self._content["Default"] = self.default.name
+            self._content["Default"] = self.default
 
     def choice(self, condition: Condition | None = None) -> Step | Branch | None:
         if condition:
-            if not self.branch:
-                return self.choices[condition]
-            _name = self.choices[condition].name
+            _name = self.choices[condition]
             return self.branch.steps[_name]
         else:
-            if not self.branch:
-                return self.choices.get(condition, self.default)
+            if condition:
+                _name = self.choices[condition].name
+                return self.branch.steps[_name]
             else:
-                if condition:
-                    _name = self.choices[condition].name
-                    return self.branch.steps[_name]
-                else:
-                    if self.branch:
-                        return self.branch.steps[self.default.name]
-                    return
+                return self.branch.steps[self.default]
 
     def choose(self, condition: Condition, next: Step):
-        self.choices[condition] = deepcopy(next)
-        _next = self.choices[condition]
+        _next = deepcopy(next)
+        self.branch.add_step(_next)
+
+        self.choices[condition] = _next.name
         try:
             condition_idx = [
                 item["Condition"] for item in self._content["Choices"]
@@ -297,7 +355,8 @@ class Choice(Step):
 
     def __repr__(self):
         choices = []
-        for con, step in self.choices.items():
+        for con, step_name in self.choices.items():
+            step = self.branch[step_name]
             choices.append(f"{con}>>{step}")
         if self.default:
             choices.append(f"default>>{self.default}")
@@ -336,6 +395,9 @@ class Parallel(Step):
                 )
             if isinstance(branch, Branch):
                 self._content["Branches"].append(branch.to_statemachine())
+
+    def __call__(self, event, context, *args, **kwds):
+        return [_branch(event, context) for _branch in self.branches]
 
 
 def parallel(*branches: list[Step | Branch], **kwargs) -> Parallel:
@@ -396,7 +458,9 @@ class Pass(Step):
         if output:
             self._content["Output"] = output
 
-    def __call__(self, event: dict, content: Any, *args, **kwargs):
+    def __call__(self, event: dict, context: Any, *args, **kwargs):
+        if "Result" in self._content:
+            return JSONPath().process_payload_template(self._content["Result"], event, context)
         return event
 
 
@@ -428,7 +492,7 @@ class Fail(Step):
             self._content["ErrorPath"] = str(error_path)
 
 
-class TaskFunction(Task):
+class LambdaFunction(Task):
     def __init__(self, func: Callable | None = None,
                  *,
                  module_path: str | None = None,
@@ -439,7 +503,6 @@ class TaskFunction(Task):
                  result_path: str | None = None, output_path: str | None = None,
                  comment: str | None = None, **kwargs):
         self.func = func
-        aws_config = AWSConfig("us-east-1", "0123456789")
 
         if module_path:
             self.module_path = module_path
@@ -475,41 +538,48 @@ class TaskFunction(Task):
         return self.func(event, context, *args, **kwargs)
 
 
-def task_function(func: Callable, **kwargs):
-    return TaskFunction(func, **kwargs)
+class LambdaTaskContext(ContextManager[LambdaFunction]):
+    """Context manager specifically for LambdaFunction objects."""
+    pass
 
 
-@task_function
+def lambda_task(func: Callable, **kwargs) -> LambdaFunction:
+    _lambda_function = LambdaFunction(func, **kwargs)
+    LambdaTaskContext.push_context_obj(_lambda_function)
+    return _lambda_function
+
+
+@lambda_task
 def step_1(event, context):
     return event
 
 
-@task_function
+@lambda_task
 def step_2(event, context):
     return event
 
 
-@task_function
+@lambda_task
 def step_3(event, context):
     return event
 
 
-@task_function
+@lambda_task
 def step_4(event, context):
     return event
 
 
-@task_function
+@lambda_task
 def step_5(event, context):
     return event
 
 
-@task_function
+@lambda_task
 def step_6(event, context):
     return event
 
 
-@task_function
+@lambda_task
 def step_7(event, context):
     return event
 
@@ -521,9 +591,12 @@ if __name__ == "__main__":
             "Choice#1", default=step_2).choose(con1, step_3)
     )
     branch = branch["Choice#1"].choice(con1) >> step_4
-    branch = branch["step_4"] >> branch["Choice#1"]
-    branch = branch["step_2"] >> [step_5, step_6 >> step_7]  # >> Pass("pass2")
-
-    import json
-    print(json.dumps(branch.to_statemachine()))
-    print(step_1.module_path)
+    branch = branch["step_2"] >> [
+        step_5,
+        step_6 >> step_7,
+    ] >> Pass(
+        "pass2",
+        input_path="$[0]",
+        result={"output.$": "$.a"}
+    )
+    print(branch({"a": 1}, None))
