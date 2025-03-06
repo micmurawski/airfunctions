@@ -16,6 +16,28 @@ class AWSResource(str, Enum):
     AWS_STATES_START_EXECUTION = "arn:aws:states:::states:startExecution"
     AWS_STATES_START_EXECUTION_SYNC = "arn:aws:states:::states:startExecution.sync:2"
 
+from collections import deque
+
+def find_common_end(step: str, content: dict) -> str | None:
+    queue = deque(
+        [choice["Next"] for choice in content["States"][step]["Choices"]]
+    )
+    if "Default" in content["States"][step]:
+        queue.append(content["States"][step]["Default"])
+
+    end = None
+    while queue:
+        nxt = queue.popleft()
+        while "End" not in content["States"][nxt]:
+            nxt = content["States"][nxt]["Next"]
+        if end is None:
+            end = nxt
+        elif end != nxt:
+            return None  
+    return end
+            
+
+    
 
 @dataclass(frozen=True, init=True)
 class Branch:
@@ -43,6 +65,10 @@ class Branch:
     def __getitem__(self, key: str):
         return self.steps[key]
 
+    def set_tail(self, name:str):
+        if name in self.steps:
+            self._set_tail(self.steps[name])
+    
     def _set_tail(self, tail):
         object.__setattr__(self, "tail", tail)
 
@@ -51,17 +77,27 @@ class Branch:
         _a = deepcopy(a)
         _b = deepcopy(b)
         _head = _a.head
+        _tail = _b.tail
 
         if merge_at is None:
             merge_at = (_a.tail.name, _b.head.name)
-
-        _a.steps[merge_at[0]].set_next(_b.steps[merge_at[1]])
-
-        _tail = _b.tail
+        
+        if isinstance(_a.tail, Choice):
+            end = find_common_end(merge_at[0], _a.definition)
+            _a.set_tail(end)
+            merge_at = (end, merge_at[1])
+            if not end:
+                raise ValueError(
+                    f"End of branch is ambiguous {_tail} needs to be attached.\
+                     You can use set_tail method."
+                )
         _steps = {**_a.steps, **_b.steps}
-        new_branch = Branch(_head, _tail)
+        _steps[merge_at[0]].set_next(_b.steps[merge_at[1]])
+        new_branch = Branch(_head, _tail, _steps)
+        
         for _, _step in _steps.items():
             new_branch.add_step(_step)
+        
         return new_branch
 
     def __rshift__(self, nxt: Any):
@@ -691,7 +727,7 @@ if __name__ == "__main__":
     )
     state_machine_1 = branch_2.to_statemachine("example-1")
     # branch = branch_1
-    branch = Pass('next2') >> branch_2
+    branch = branch_1 >> branch_2
     # print(branch({"a": 1}, None))
 
     import json
