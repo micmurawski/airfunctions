@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any, Callable
 
 from airfunctions.conditions import Condition, Ref
-from airfunctions.config import AirFunctionsConfig
 from airfunctions.context import ContextManager
 from airfunctions.jsonpath import JSONPath
 
@@ -78,11 +77,14 @@ class Branch:
     def name(self):
         return "-".join(list(self.steps.keys()))
 
-    def to_statemachine(self):
+    def statemachine_definition(self) -> dict:
         return {
             "StartAt": self.head.name,
             "States": dict((k, v._content) for k, v in self.steps.items()),
         }
+
+    def to_statemachine(self, name: str) -> Any:
+        return StateMachine(name, self.statemachine_definition())
 
     @staticmethod
     def __call_choice(curr, event, context):
@@ -391,10 +393,11 @@ class Parallel(Step):
         for branch in self.branches:
             if isinstance(branch, Step):
                 self._content["Branches"].append(
-                    Branch(head=branch, tail=branch).to_statemachine()
+                    Branch(head=branch, tail=branch).statemachine_definition()
                 )
             if isinstance(branch, Branch):
-                self._content["Branches"].append(branch.to_statemachine())
+                self._content["Branches"].append(
+                    branch.statemachine_definition())
 
     def __call__(self, event, context, *args, **kwds):
         return [_branch(event, context) for _branch in self.branches]
@@ -490,6 +493,42 @@ class Fail(Step):
             self._content["CausePath"] = str(cause_path)
         if error_path:
             self._content["ErrorPath"] = str(error_path)
+
+
+class StateMachine(Task):
+    def __init__(
+        self,
+        name: str,
+        branch: Any,
+        parameters=None,
+        query_language=None,
+        input_path=None,
+        result_path=None,
+        output_path=None,
+        comment=None,
+        **kwargs
+    ):
+
+        resource = AWSResource.AWS_STEP_FUNCTIONS.replace(
+            "${STATE_MACHINE}", name)
+        self.sm_branch = branch
+
+        super().__init__(
+            name,
+            resource,
+            parameters,
+            query_language,
+            input_path,
+            result_path,
+            output_path,
+            comment,
+            **kwargs
+        )
+
+
+class StateMachineContext(ContextManager[StateMachine]):
+    """Context manager specifically for StateMachine objects."""
+    pass
 
 
 class LambdaFunction(Task):
@@ -600,3 +639,4 @@ if __name__ == "__main__":
         result={"output.$": "$.a"}
     )
     print(branch({"a": 1}, None))
+    print(branch.statemachine_definition())

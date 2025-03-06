@@ -130,7 +130,7 @@ class Condition:
             return str(arg)
 
     def jsonata(self, top=False) -> str:
-        if self.b is None:
+        if self.b is None and self.operator == operator.not_:
             res = f"{self.operator.__name__}({self.parse_arg(self.a)})"
         else:
             res = f"{self.parse_arg(self.a)} {self.parse_op(self.operator)} {self.parse_arg(self.b)}"

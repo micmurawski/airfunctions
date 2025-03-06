@@ -1,13 +1,11 @@
 import base64
 import hashlib
 import json
-import operator
 import random
 import re
 import sys
 import uuid
-from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional
 
 ModuleType = type(sys)
 
@@ -1296,6 +1294,7 @@ if __name__ == "__main__":
     test_payload_template()
     test_jsonpath_for_aws_states()
     jsonpath = JSONPath()
-    res = jsonpath.apply("$.resultadosParalelos" ,{"resultadosParalelos": [1,2,3]})
+    res = jsonpath.apply("$.resultadosParalelos", {
+                         "resultadosParalelos": [1, 2, 3]})
     raise Exception(res)
     print("All tests passed! JSONPath implementation is working correctly.")

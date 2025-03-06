@@ -217,7 +217,6 @@ if __name__ == "__main__":
         s3_existing_package={
             "bucket": "bucket-1",
             "key": "key-1"
-
         },
         layers=[],
         environment_variables={},
