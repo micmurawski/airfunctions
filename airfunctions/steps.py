@@ -12,7 +12,9 @@ from airfunctions.jsonpath import JSONPath
 class AWSResource(str, Enum):
     AWS_LAMBDA = "arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:${prefix}${FUNCTION_NAME}${suffix}"
     AWS_STATES_LAMBDA_INVOKE = "arn:aws:states:::lambda:invoke"
-    AWS_STEP_FUNCTIONS = "arn:aws:states:${AWS_REGION}:${AWS_ACCOUNT_ID}:stateMachine:${prefix}${STATE_MACHINE}${suffix}"
+    AWS_STATES_STATE_MACHINE = "arn:aws:states:${AWS_REGION}:${AWS_ACCOUNT_ID}:stateMachine:${prefix}${STATE_MACHINE}${suffix}"
+    AWS_STATES_START_EXECUTION = "arn:aws:states:::states:startExecution"
+    AWS_STATES_START_EXECUTION_SYNC = "arn:aws:states:::states:startExecution.sync:2"
 
 
 @dataclass(frozen=True, init=True)
@@ -44,21 +46,41 @@ class Branch:
     def _set_tail(self, tail):
         object.__setattr__(self, "tail", tail)
 
+    @classmethod
+    def merge_branches(cls, a, b, merge_at: list[str] | None = None):
+        _a = deepcopy(a)
+        _b = deepcopy(b)
+        _head = _a.head
+
+        if merge_at is None:
+            merge_at = (_a.tail.name, _b.head.name)
+
+        _a.steps[merge_at[0]].set_next(_b.steps[merge_at[1]])
+
+        _tail = _b.tail
+        _steps = {**_a.steps, **_b.steps}
+        new_branch = Branch(_head, _tail)
+        for _, _step in _steps.items():
+            new_branch.add_step(_step)
+        return new_branch
+
     def __rshift__(self, nxt: Any):
+        if isinstance(nxt, Branch):
+            return self.merge_branches(self, nxt)
+
         _steps = deepcopy(self.steps)
         _nxt = deepcopy(nxt)
         _head = _steps[self.head.name]
         _tail = _steps[self.tail.name]
+
         if isinstance(_tail, Choice):
             raise ValueError(
-                f"End of branch {_tail} needs to be attached."
+                f"End of branch is ambiguous {_tail} needs to be attached."
             )
         if isinstance(_nxt, Choice):
             choices = deepcopy(list(_nxt.branch.steps.values()))
             for c in choices:
                 _steps[c.name] = c
-        elif isinstance(nxt, Branch):
-            _steps = {**_steps, **_nxt.steps}
         else:
             _steps[_nxt.name] = _nxt
 
@@ -77,14 +99,15 @@ class Branch:
     def name(self):
         return "-".join(list(self.steps.keys()))
 
-    def statemachine_definition(self) -> dict:
+    @property
+    def definition(self) -> dict:
         return {
             "StartAt": self.head.name,
             "States": dict((k, v._content) for k, v in self.steps.items()),
         }
 
     def to_statemachine(self, name: str) -> Any:
-        return StateMachine(name, self.statemachine_definition())
+        return StateMachine(name, branch=self)
 
     @staticmethod
     def __call_choice(curr, event, context):
@@ -195,8 +218,23 @@ class Step:
             self._content.pop("End", None)
 
     def __rshift__(self, next: Any) -> Branch:
+        if isinstance(next, Branch):
+            if self.branch:
+                new_branch = Branch.merge_branches(
+                    self.branch,
+                    next,
+                    merge_at=(self.name, next.head.name)
+                )
+                return new_branch
+            else:
+                _steps = {self.name: self, **next.steps}
+                _steps[self.name].set_next(_steps[next.head.name])
+                _head = _steps[self.name]
+                _tail = _steps[next.tail.name]
+                return Branch(head=_head, tail=_tail, steps=_steps)
+
         _next = deepcopy(next)
-        if isinstance(next, Step):
+        if isinstance(_next, Step):
             if next != self and self.branch is None:
                 self.set_next(_next)
                 return Branch(head=self, tail=_next)
@@ -207,6 +245,7 @@ class Step:
                 return self.branch
             else:
                 raise ValueError("step cannot be attached to itself.")
+
         if isinstance(_next, (list, tuple)):
             pnext: Parallel = parallel(*_next)
             if self.branch:
@@ -289,7 +328,7 @@ class Step:
 class Task(Step):
     def __init__(self,
                  name: str,
-                 resource: str = AWSResource.AWS_LAMBDA.value,
+                 resource: str,
                  parameters: dict | None = None,
                  query_language: str | None = None,
                  input_path: str | None = None,
@@ -393,11 +432,11 @@ class Parallel(Step):
         for branch in self.branches:
             if isinstance(branch, Step):
                 self._content["Branches"].append(
-                    Branch(head=branch, tail=branch).statemachine_definition()
+                    Branch(head=branch, tail=branch).definition
                 )
             if isinstance(branch, Branch):
                 self._content["Branches"].append(
-                    branch.statemachine_definition())
+                    branch.definition)
 
     def __call__(self, event, context, *args, **kwds):
         return [_branch(event, context) for _branch in self.branches]
@@ -508,14 +547,18 @@ class StateMachine(Task):
         comment=None,
         **kwargs
     ):
-
-        resource = AWSResource.AWS_STEP_FUNCTIONS.replace(
+        self.arn = AWSResource.AWS_STATES_STATE_MACHINE.value.replace(
             "${STATE_MACHINE}", name)
         self.sm_branch = branch
 
+        if parameters is None:
+            parameters = {}
+
+        parameters["StateMachineArn"] = self.arn
+
         super().__init__(
             name,
-            resource,
+            AWSResource.AWS_STATES_START_EXECUTION_SYNC.value,
             parameters,
             query_language,
             input_path,
@@ -524,6 +567,13 @@ class StateMachine(Task):
             comment,
             **kwargs
         )
+
+    def __repr__(self):
+        return f"StateMachine(name={self.name})"
+
+    @property
+    def definition(self) -> dict:
+        return self.sm_branch.definition
 
 
 class StateMachineContext(ContextManager[StateMachine]):
@@ -535,7 +585,6 @@ class LambdaFunction(Task):
     def __init__(self, func: Callable | None = None,
                  *,
                  module_path: str | None = None,
-                 resource: str = AWSResource.AWS_LAMBDA.value,
                  parameters: dict | None = None,
                  query_language: str | None = None,
                  input_path: str | None = None,
@@ -548,8 +597,8 @@ class LambdaFunction(Task):
         else:
             self.module_path = f"{Path(__file__).stem}.{self.func.__name__}"
 
-        resource = resource.\
-            replace("${FUNCTION_NAME}", self.func.__name__)
+        resource = AWSResource.AWS_LAMBDA.value.replace(
+            "${FUNCTION_NAME}", self.func.__name__)
 
         super().__init__(
             self.func.__name__,
@@ -625,12 +674,14 @@ def step_7(event, context):
 
 if __name__ == "__main__":
     con1 = (step_1.output("a") == 10) | (step_1.output("b") == 20)
-    branch = (
+    branch_1 = (
         step_1 >> Pass("pass1") >> Choice(
             "Choice#1", default=step_2).choose(con1, step_3)
     )
-    branch = branch["Choice#1"].choice(con1) >> step_4
-    branch = branch["step_2"] >> [
+    branch_1 = branch_1["Choice#1"].choice(con1) >> Pass("next")
+    branch_1 = branch_1["Choice#1"].choice() >> branch_1["next"]
+
+    branch_2 = step_4 >> [
         step_5,
         step_6 >> step_7,
     ] >> Pass(
@@ -638,5 +689,10 @@ if __name__ == "__main__":
         input_path="$[0]",
         result={"output.$": "$.a"}
     )
-    print(branch({"a": 1}, None))
-    print(branch.statemachine_definition())
+    state_machine_1 = branch_2.to_statemachine("example-1")
+    # branch = branch_1
+    branch = Pass('next2') >> branch_2
+    # print(branch({"a": 1}, None))
+
+    import json
+    print(json.dumps(branch.definition))
