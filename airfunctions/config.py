@@ -14,10 +14,11 @@ def singleton(class_):
 @singleton
 @dataclass
 class AirFunctionsConfig:
-    aws_region: str
-    aws_account_id: str
+    aws_region: str = "${AWS_REGION}"
+    aws_account_id: str = "${AWS_ACCOUNT_ID}"
     resource_prefix: str = ""
     resource_suffix: str = ""
+    environment: str = ""
 
 
 if __name__ == "__main__":

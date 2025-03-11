@@ -1,3 +1,4 @@
+from collections import deque
 from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
@@ -16,47 +17,53 @@ class AWSResource(str, Enum):
     AWS_STATES_START_EXECUTION = "arn:aws:states:::states:startExecution"
     AWS_STATES_START_EXECUTION_SYNC = "arn:aws:states:::states:startExecution.sync:2"
 
-from collections import deque
 
-def find_common_end(step: str, content: dict) -> str | None:
-    queue = deque(
-        [choice["Next"] for choice in content["States"][step]["Choices"]]
-    )
-    if "Default" in content["States"][step]:
-        queue.append(content["States"][step]["Default"])
+def collect_steps(step: str, content: dict, q: deque):
+    if step not in content["States"]:
+        return
 
-    end = None
+    if content["States"][step]["Type"] == "Choice":
+        for choice in content["States"][step]["Choices"]:
+            q.appendleft(choice["Next"])
+        if "Default" in content["States"][step]:
+            q.appendleft(content["States"][step]["Default"])
+    else:
+        q.appendleft(step)
+
+
+def find_ends(step: str, content: dict) -> list[str]:
+    queue = deque([])
+    collect_steps(step, content, queue)
+    ends = set()
+
     while queue:
         nxt = queue.popleft()
-        while "End" not in content["States"][nxt]:
-            nxt = content["States"][nxt]["Next"]
-        if end is None:
-            end = nxt
-        elif end != nxt:
-            return None  
-    return end
-            
 
-    
+        while content["States"][nxt]['Type'] != "Choice" and not content["States"][nxt].get("End", False):
+            nxt = content["States"][nxt]["Next"]
+        if content["States"][nxt]['Type'] == "Choice":
+            collect_steps(nxt, content, queue)
+            continue
+
+        ends.add(nxt)
+    return list(ends)
+
 
 @dataclass(frozen=True, init=True)
 class Branch:
-    def __init__(self, head: Any, tail: Any | None = None, steps: dict | None = None, branch: Any | None = None):
+    def __init__(self, head: Any, steps: dict | None = None, branch: Any | None = None):
         object.__setattr__(self, "head", head)
-        object.__setattr__(self, "tail", tail)
         object.__setattr__(self, "branch", branch)
 
         if steps:
             object.__setattr__(self, "steps", steps)
+            for _, step in self.steps.items():
+                self.add_step(step)
         else:
             object.__setattr__(self, "steps", {})
 
         self.steps[head.name] = head
         self.steps[head.name].branch = self
-
-        if tail:
-            self.steps[tail.name] = tail
-            self.steps[tail.name].branch = self
 
     def add_step(self, step):
         self.steps[step.name] = step
@@ -65,39 +72,30 @@ class Branch:
     def __getitem__(self, key: str):
         return self.steps[key]
 
-    def set_tail(self, name:str):
-        if name in self.steps:
-            self._set_tail(self.steps[name])
-    
-    def _set_tail(self, tail):
-        object.__setattr__(self, "tail", tail)
+    def add_end(self, step):
+        if step:
+            ends = find_ends(self.head.name, self.definition)
+            for end in ends:
+                self.add_step(step)
+                self.steps[end].set_next(step)
 
     @classmethod
     def merge_branches(cls, a, b, merge_at: list[str] | None = None):
         _a = deepcopy(a)
         _b = deepcopy(b)
         _head = _a.head
-        _tail = _b.tail
 
         if merge_at is None:
-            merge_at = (_a.tail.name, _b.head.name)
-        
-        if isinstance(_a.tail, Choice):
-            end = find_common_end(merge_at[0], _a.definition)
-            _a.set_tail(end)
-            merge_at = (end, merge_at[1])
-            if not end:
-                raise ValueError(
-                    f"End of branch is ambiguous {_tail} needs to be attached.\
-                     You can use set_tail method."
-                )
+            merge_at = (None, _b.head.name)
+
         _steps = {**_a.steps, **_b.steps}
-        _steps[merge_at[0]].set_next(_b.steps[merge_at[1]])
-        new_branch = Branch(_head, _tail, _steps)
-        
-        for _, _step in _steps.items():
-            new_branch.add_step(_step)
-        
+        new_branch = Branch(_head, _steps)
+
+        if merge_at[0]:
+            new_branch.steps[merge_at].set_next(merge_at[1])
+        else:
+            new_branch.add_end(new_branch.steps[merge_at[1]])
+
         return new_branch
 
     def __rshift__(self, nxt: Any):
@@ -107,12 +105,7 @@ class Branch:
         _steps = deepcopy(self.steps)
         _nxt = deepcopy(nxt)
         _head = _steps[self.head.name]
-        _tail = _steps[self.tail.name]
 
-        if isinstance(_tail, Choice):
-            raise ValueError(
-                f"End of branch is ambiguous {_tail} needs to be attached."
-            )
         if isinstance(_nxt, Choice):
             choices = deepcopy(list(_nxt.branch.steps.values()))
             for c in choices:
@@ -120,11 +113,8 @@ class Branch:
         else:
             _steps[_nxt.name] = _nxt
 
-        _tail.set_next(_nxt)
-        _tail = _nxt
-        new_branch = Branch(_head, _tail)
-        for _, _step in _steps.items():
-            new_branch.add_step(_step)
+        new_branch = Branch(_head, _steps)
+        new_branch.add_end(_nxt)
         return new_branch
 
     def __repr__(self):
@@ -263,17 +253,16 @@ class Step:
                 )
                 return new_branch
             else:
-                _steps = {self.name: self, **next.steps}
-                _steps[self.name].set_next(_steps[next.head.name])
-                _head = _steps[self.name]
-                _tail = _steps[next.tail.name]
-                return Branch(head=_head, tail=_tail, steps=_steps)
+                new_branch = deepcopy(next)
+                new_branch.add_end(self)
+                return new_branch
 
         _next = deepcopy(next)
         if isinstance(_next, Step):
             if next != self and self.branch is None:
-                self.set_next(_next)
-                return Branch(head=self, tail=_next)
+                branch = Branch(head=self)
+                branch.add_end(_next)
+                return branch
             elif self.branch:
                 _next.branch = self.branch
                 self.branch.steps[_next.name] = _next
@@ -284,15 +273,14 @@ class Step:
 
         if isinstance(_next, (list, tuple)):
             pnext: Parallel = parallel(*_next)
+
             if self.branch:
-                pnext.branch = self.branch
-                self.branch.steps[pnext.name] = pnext
-                self.branch.steps[self.name].set_next(pnext)
-                self.branch._set_tail(pnext)
-                return self.branch
+                branch = self.branch
             else:
-                self.set_next(pnext)
-                return Branch(head=self, tail=pnext)
+                branch = Branch(head=self)
+
+            branch.add_end(pnext)
+            return branch
         return _next
 
     def retry(
@@ -397,7 +385,7 @@ class Choice(Step):
         self.choices: dict[Condition, str] = {}
         self._content["Choices"] = []
 
-        self.branch = Branch(head=self, tail=self)
+        self.branch = Branch(head=self)
         self.branch.add_step(default)
         self.default = default.name
         if self.default:
@@ -468,7 +456,7 @@ class Parallel(Step):
         for branch in self.branches:
             if isinstance(branch, Step):
                 self._content["Branches"].append(
-                    Branch(head=branch, tail=branch).definition
+                    Branch(head=branch).definition
                 )
             if isinstance(branch, Branch):
                 self._content["Branches"].append(
@@ -603,6 +591,7 @@ class StateMachine(Task):
             comment,
             **kwargs
         )
+        StateMachineContext.push_context_obj(self)
 
     def __repr__(self):
         return f"StateMachine(name={self.name})"
@@ -714,9 +703,7 @@ if __name__ == "__main__":
         step_1 >> Pass("pass1") >> Choice(
             "Choice#1", default=step_2).choose(con1, step_3)
     )
-    branch_1 = branch_1["Choice#1"].choice(con1) >> Pass("next")
-    branch_1 = branch_1["Choice#1"].choice() >> branch_1["next"]
-
+    branch_1 = branch_1["Choice#1"].choice() >> Pass("next")
     branch_2 = step_4 >> [
         step_5,
         step_6 >> step_7,
@@ -725,7 +712,7 @@ if __name__ == "__main__":
         input_path="$[0]",
         result={"output.$": "$.a"}
     )
-    state_machine_1 = branch_2.to_statemachine("example-1")
+    # branch_2 = branch_2.to_statemachine("example-1")
     # branch = branch_1
     branch = branch_1 >> branch_2
     # print(branch({"a": 1}, None))
