@@ -21,19 +21,36 @@ from airfunctions.steps import Choice, Pass, lambda_task
 def step_1(event, context):
     return event
 
+
+@lambda_task
+def step_2(event, context):
+    return event
+
+# ...
+
+@lambda_task
+def step_7(event, context):
+    return event
+
 # Create workflows using familiar operators
-workflow = (
-    step_1 
-    >> Pass("pass1") 
-    >> Choice("my_choice", default=step_2).choose(
-        condition=step_1.output("value") == 10, 
-        next_step=step_3
-    )
+condition_1 = (step_1.output("a") == 10) | (step_1.output("b") == 20)
+workflow_1 = (
+    step_1
+    >> Pass("pass1")
+    >> Choice("Choice#1", default=step_2).choose(condition_1, step_3)
 )
-
+workflow_1 = workflow_1["Choice#1"].choice() >> Pass("next")
+workflow_2 = (
+    step_4
+    >> [
+        step_5,
+        step_6 >> step_7,
+    ]
+    >> Pass("pass2", input_path="$[0]", result={"output.$": "$.a"})
+)
+workflow_final = workflow_1 >> workflow_2
 # Deploy to AWS Step Functions
-workflow.to_statemachine("my-workflow")
-
+workflow_final.to_statemachine("my-workflow")
 # Configure and deploy using Terraform
 Config().resource_prefix = "my-project-"
 bundler = TerraformBundler()
@@ -41,6 +58,7 @@ bundler.validate()
 bundler.apply()
 ```
 
+![example of state machine above](doc/image.png)
 ## Key Concepts
 
 - **Lambda Tasks**: Decorate your Python functions with `@lambda_task` to convert them into AWS Lambda functions
