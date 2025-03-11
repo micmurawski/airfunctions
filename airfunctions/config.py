@@ -19,6 +19,9 @@ class AirFunctionsConfig:
     resource_prefix: str = ""
     resource_suffix: str = ""
     environment: str = ""
+    module_path: str = ""
+    lambda_module_version: str = "7.20.1"
+    lambda_module_source: str = "terraform-aws-modules/lambda/aws"
 
 
 if __name__ == "__main__":

@@ -614,13 +614,16 @@ class LambdaFunction(Task):
                  query_language: str | None = None,
                  input_path: str | None = None,
                  result_path: str | None = None, output_path: str | None = None,
-                 comment: str | None = None, **kwargs):
+                 comment: str | None = None,
+                 timeout: int = 900,
+                 memory_size: int = 256,
+                 tracing_mode: str = "Active",
+                 **kwargs):
         self.func = func
-
-        if module_path:
-            self.module_path = module_path
-        else:
-            self.module_path = f"{Path(__file__).stem}.{self.func.__name__}"
+        self.timeout = timeout
+        self.memory_size = memory_size
+        self.tracing_mode = tracing_mode
+        self.handler_path = (".".join(self.func.__module__.split(".")) + "." + self.func.__name__) or (module_path + "." + self.func.__name__)
 
         resource = AWSResource.AWS_LAMBDA.value.replace(
             "${FUNCTION_NAME}", self.func.__name__)
@@ -695,27 +698,3 @@ def step_6(event, context):
 @lambda_task
 def step_7(event, context):
     return event
-
-
-if __name__ == "__main__":
-    con1 = (step_1.output("a") == 10) | (step_1.output("b") == 20)
-    branch_1 = (
-        step_1 >> Pass("pass1") >> Choice(
-            "Choice#1", default=step_2).choose(con1, step_3)
-    )
-    branch_1 = branch_1["Choice#1"].choice() >> Pass("next")
-    branch_2 = step_4 >> [
-        step_5,
-        step_6 >> step_7,
-    ] >> Pass(
-        "pass2",
-        input_path="$[0]",
-        result={"output.$": "$.a"}
-    )
-    # branch_2 = branch_2.to_statemachine("example-1")
-    # branch = branch_1
-    branch = branch_1 >> branch_2
-    # print(branch({"a": 1}, None))
-
-    import json
-    print(json.dumps(branch.definition))

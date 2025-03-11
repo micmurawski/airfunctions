@@ -7,11 +7,18 @@ authors = [
 ]
 license = {text = "MIT"}
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = "<4.0,>=3.10"
 dependencies = [
+    "poetry-plugin-lambda-build (>=1.0.8,<2.0.0)"
 ]
 
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry-plugin-lambda-build]
+docker-image = "public.ecr.aws/sam/build-python3.12:latest-x86_64"
+layer-artifact-path = "layer.zip"
+layer-install-dir = "python"
+function-artifact-path = "function.zip"

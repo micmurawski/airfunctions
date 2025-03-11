@@ -51,20 +51,16 @@ class TerraformFunction:
         _args = []
 
         for arg in args:
-            if isinstance(arg, str):
-                _args.append(f'"{arg}"')
-            elif isinstance(arg, TerraformFunction):
+            if isinstance(arg, TerraformFunction):
                 _args.append(arg.value)
             else:
-                _args.append(str(arg))
-        
+                _args.append(TerraformBlock._format_value(arg))
+
         for k, v in kwds.items():
-            if isinstance(v, str):
-                _kwds.append(f'{k} = "{v}"')
-            elif isinstance(v, TerraformFunction):
+            if isinstance(v, TerraformFunction):
                 _kwds.append(f'{k} = {v.value}')
             else:
-                _kwds.append(f'{k} = {v}')
+                _kwds.append(f'{k} = {TerraformBlock._format_value(v)}')
         
         _args_str = ', '.join([str(arg) for arg in _args])
         _kwds_str = ', '.join(_kwds)
@@ -80,6 +76,16 @@ def format(*args, **kwds):
     return TerraformFunction("format")(*args, **kwds)
 
 
+def templatefile(path: str, map: Any):
+    return TerraformFunction("templatefile")(path, map)
+
+
+def jsonencode(value: dict):
+    return TerraformFunction("jsonencode")(value)
+
+def filemd5(path: str):
+    return TerraformFunction("filemd5")(path)
+
 class TerraformBlock:
     """Base class for all Terraform blocks"""
 
@@ -88,9 +94,11 @@ class TerraformBlock:
         self.blocks = []
         TerraformContextManager().push_context_obj(self)
 
-    def ref(self, attr_name: str):
+    def ref(self, attr_name: str) -> Ref:
         if hasattr(self, 'block_name'):
             return ref(f"{self.block_type}.{self.block_name}.{attr_name}")
+        elif getattr(self, 'block_type', None) == "data":
+            return ref(f"{self.block_type}.{self.resource_name}.{attr_name}")
         elif hasattr(self, 'resource_name'):
             return ref(f"{self.resource_type}.{self.resource_name}.{attr_name}")
         else:
@@ -130,7 +138,8 @@ class TerraformBlock:
         lines.append(f"{indent_str}}}")
         return "\n".join(lines)
 
-    def _format_value(self, value):
+    @classmethod
+    def _format_value(cls, value):
         """Format a value according to Terraform HCL syntax"""
         if isinstance(value, str):
             # Check if the string is a reference or an expression that shouldn't be quoted
@@ -147,11 +156,12 @@ class TerraformBlock:
         elif isinstance(value, (int, float)):
             return str(value)
         elif isinstance(value, list):
-            elements = [self._format_value(elem) for elem in value]
+            elements = [cls._format_value(elem) for elem in value]
             return f"[{', '.join(elements)}]"
         elif isinstance(value, dict):
             pairs = [
-                f"{k} = {self._format_value(v)}" for k, v in value.items()]
+                f"{k} = {cls._format_value(v)}" for k, v in value.items()
+            ]
             return f"{{{', '.join(pairs)}}}"
         elif value is None:
             return "null"

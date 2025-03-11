@@ -1,47 +1,28 @@
+import json
+import os
 import sys
+from pathlib import Path
 
 from airfunctions.config import AirFunctionsConfig
+from airfunctions.poetry_utils import get_lambda_build_config
 from airfunctions.steps import *
 from airfunctions.terrapy import (ConfigBlock, Data, Locals, Module, Output,
                                   Provider, Resource,
-                                  TerraformBlocksCollection, Variable)
+                                  TerraformBlocksCollection, Variable, filemd5)
 from airfunctions.terrapy import format as tf_format
-from airfunctions.terrapy import local, ref
+from airfunctions.terrapy import local, ref, templatefile
+
+airfunctions_config = AirFunctionsConfig()
+
+PYTHON_RUNTIME = f"python{sys.version_info.major}.{sys.version_info.minor}"
+LAMBDA_MODULE_VERSION = airfunctions_config.lambda_module_version
+LAMBDA_MODULE_SOURCE = airfunctions_config.lambda_module_source
 
 
-@lambda_task
-def step_1(event, context):
-    return event
-
-
-@lambda_task
-def step_2(event, context):
-    return event
-
-
-@lambda_task
-def step_3(event, context):
-    return event
-
-
-@lambda_task
-def step_4(event, context):
-    return event
-
-
-@lambda_task
-def step_5(event, context):
-    return event
-
-
-@lambda_task
-def step_6(event, context):
-    return event
-
-
-@lambda_task
-def step_7(event, context):
-    return event
+def save_dict_to_json_file(data: dict, file_path: str):
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    with open(file_path, "w") as f:
+        json.dump(data, f)
 
 
 class Bundler:
@@ -59,63 +40,114 @@ class Bundler:
 
     def to_terraform(self):
         """Convert collected resources to Terraform configurations"""
+        project_path = Path(".")
+        lambda_config = get_lambda_build_config(project_path)
         main = TerraformBlocksCollection()
         data = TerraformBlocksCollection()
         locals = TerraformBlocksCollection()
 
+        aws_caller_identity = Data(
+            "aws_caller_identity",
+            "caller_identity"
+        )
+        aws_region = Data(
+            "aws_region",
+            "region"
+        )
+        data.add(aws_caller_identity)
+        data.add(aws_region)
+
         bucket = Resource(
             "aws_s3_bucket",
             "assets_bucket",
-            bucket=tf_format("%s-%s-bucket-%s", local.prefix, "assets", local.suffix),
+            bucket=tf_format(
+                "%s-%s-bucket-%s",
+                local.prefix,
+                "assets",
+                local.suffix
+            ),
             force_destroy=True,
-            tags=ref("local.tags")
+            tags=local.tags
         )
+        lambda_layer_artifact_path = ".." / Path(lambda_config["layer-artifact-path"])
+        aws_s3_bucket_object = Resource(
+            "aws_s3_object",
+            "lambda_layer_code",
+            bucket=bucket.ref("id"),
+            key="lambda_layer_code.zip",
+            source=str(lambda_layer_artifact_path),
+            source_hash=filemd5(str(lambda_layer_artifact_path))
+        )
+        main.add(aws_s3_bucket_object)
         main.add(bucket)
         lambda_layer = Module(
             "lambda_layer",
-            source="terraform-aws-modules/lambda/aws",
-            version="6.0.1",
+            source=LAMBDA_MODULE_SOURCE,
+            version=LAMBDA_MODULE_VERSION,
             create_layer=True,
-            layer_name=tf_format("%s-%s-layer-%s", local.prefix, "lambda", local.suffix),
+            layer_name=tf_format(
+                "%s-%s-layer-%s", local.prefix, "lambda", local.suffix),
             compatible_runtimes=[
-                f"python{sys.version_info.major}.{sys.version_info.minor}"
+                PYTHON_RUNTIME
             ],
             create_package=False,
-            s3_existing_package={}
+            s3_existing_package={
+                "bucket": bucket.ref("id"),
+                "key": aws_s3_bucket_object.ref("key")
+            }
         )
         # templatefile(x, y)
         main.add(lambda_layer)
 
         # Create Lambda function resources
+        lambda_arns = []
         for lambda_task in self.lambda_functions:
-
+            function_artifact_path = ".." / Path(lambda_config["function-artifact-path"])
+            aws_s3_bucket_object = Resource(
+                "aws_s3_object",
+                "lambda_function_code_{}".format(lambda_task.name),
+                bucket=bucket.ref("id"),
+                key="{}.zip".format(lambda_task.name),
+                source=str(function_artifact_path),
+                source_hash=filemd5(str(function_artifact_path))
+            )
+            main.add(aws_s3_bucket_object)
             lambda_module = Module(
                 lambda_task.name,
-                source="terraform-aws-modules/lambda/aws",
-                version="6.0.1",
-                tags={},
-                timeout=900,
-                memory_size=256,
-                runtime="python3.12",
-                tracing_mode="Active",
-                create_package=False,
-                s3_existing_package={
-                    "bucket": "bucket-1",
-                    "key": "key-1"
-                },
-                function_name=tf_format("%s-%s-%s", local.prefix, lambda_task.name, local.suffix),
-                layers=[lambda_layer.ref("arn")],
-                environment_variables={},
+                source=LAMBDA_MODULE_SOURCE,
+                version=LAMBDA_MODULE_VERSION,
+                tags=local.tags,
+                timeout=lambda_task.timeout,
+                memory_size=lambda_task.memory_size,
+                tracing_mode=lambda_task.tracing_mode,
+                handler=lambda_task.handler_path,
                 create_role=True,
                 attach_network_policy=True,
                 attach_cloudwatch_logs_policy=True,
                 attach_tracing_policy=True,
+                runtime=PYTHON_RUNTIME,
+                create_package=False,
+                s3_existing_package={
+                    "bucket": bucket.ref("id"),
+                    "key": aws_s3_bucket_object.ref("key")
+                },
+                function_name=tf_format(
+                    "%s-%s-%s", local.prefix, lambda_task.name, local.suffix),
+                layers=[lambda_layer.ref("lambda_layer_arn")],
+                environment_variables={},
             )
             main.add(lambda_module)
+            lambda_arns.append(lambda_module.ref("lambda_function_arn"))
 
         # Create Step Function State Machine resources
         for state_machine in self.state_machines:
+            state_machine_definition_path = Path(
+                f"terraform/state_machines/{state_machine.name}.json")
 
+            save_dict_to_json_file(
+                state_machine.definition,
+                state_machine_definition_path
+            )
             iam_assume_role_policy_document = Data(
                 "aws_iam_policy_document",
                 "role_assume_role_policy_{}".format(state_machine.name),
@@ -156,29 +188,53 @@ class Bundler:
             aws_iam_role = Resource(
                 "aws_iam_role",
                 "role_{}".format(state_machine.name),
-                name=tf_format("%s-%s-%s", local.prefix, state_machine.name, local.suffix),
+                name=tf_format("%s-%s-%s", local.prefix,
+                               state_machine.name, local.suffix),
                 assume_role_policy=iam_assume_role_policy_document.ref("json"),
-                inline_policy_document=iam_role_policy_document.ref("json")
+            )
+            aws_iam_role_policy = Resource(
+                "aws_iam_role_policy",
+                "role_policy_{}".format(state_machine.name),
+                name=tf_format("%s-%s-%s", local.prefix,
+                               state_machine.name, local.suffix),
+                policy=iam_role_policy_document.ref("json"),
+                role=aws_iam_role.ref("id")
             )
             main.add(aws_iam_role)
+            main.add(aws_iam_role_policy)
 
             state_machine_resource = Resource(
                 "aws_sfn_state_machine",
                 state_machine.name,
-                name=tf_format("%s-%s-%s", local.prefix, state_machine.name, local.suffix),
+                name=tf_format(
+                    "%s-%s-%s",
+                    local.prefix,
+                    state_machine.name,
+                    local.suffix
+                ),
                 role_arn=aws_iam_role.ref("role_arn"),
-                definition="example-definition",
+                definition=templatefile(
+                    f"${{path.module}}/{state_machine_definition_path}",
+                    {
+                        "AWS_ACCOUNT_ID": aws_caller_identity.ref("account_id"),
+                        "AWS_REGION": aws_region.ref("name"),
+                        "prefix": local.prefix,
+                        "suffix": local.suffix,
+                    }
+                ),
             )
             main.add(state_machine_resource)
 
         locals_block = Locals(
-            prefix=AirFunctionsConfig().resource_prefix,
-            suffix=AirFunctionsConfig().resource_suffix,
-            environment=AirFunctionsConfig().environment,
+            prefix=airfunctions_config.resource_prefix,
+            suffix=airfunctions_config.resource_suffix,
+            environment=airfunctions_config.environment,
+            lambda_arns=lambda_arns,
             tags={}
         )
         locals.add(locals_block)
 
+        data.save("terraform/data.tf")
         locals.save("terraform/locals.tf")
         main.save("terraform/main.tf")
         data.save("terraform/data.tf")
