@@ -7,11 +7,23 @@ from pathlib import Path
 from airfunctions.config import AirFunctionsConfig
 from airfunctions.poetry_utils import get_lambda_build_config
 from airfunctions.steps import *
-from airfunctions.terrapy import (Backend, ConfigBlock, Data, Locals, Module,
-                                  Output, Provider, Provider_Config,
-                                  Required_Providers, Resource,
-                                  TerraformBlocksCollection, TerraformConfig,
-                                  TerraformConfiguration, Variable, filemd5)
+from airfunctions.terrapy import (
+    Backend,
+    ConfigBlock,
+    Data,
+    Locals,
+    Module,
+    Output,
+    Provider,
+    Provider_Config,
+    Required_Providers,
+    Resource,
+    TerraformBlocksCollection,
+    TerraformConfig,
+    TerraformConfiguration,
+    Variable,
+    filemd5,
+)
 from airfunctions.terrapy import format as tf_format
 from airfunctions.terrapy import local, ref, templatefile
 
@@ -34,13 +46,18 @@ class Bundler:
         self.lambda_functions = {}
         self.state_machines = {}
 
+    def apply(self):
+        self.collect_resources()
+        self.to_terraform()
+        self.build_lambdas()
+        self.terraform_apply()
+
     def terraform_apply(self):
         cwd = "./terraform"
-        init = subprocess.run(["terraform", "init"], cwd=cwd)
-        plan = subprocess.run(["terraform", "plan", "-out=plan.out"], cwd=cwd)
-        apply = subprocess.run(
-            ["terraform", "apply", "-auto-approve", "plan.out"], cwd=cwd
-        )
+        subprocess.run(["terraform", "init"], cwd=cwd)
+        subprocess.run(["terraform", "plan", "-out=plan.out"], cwd=cwd)
+        subprocess.run(["terraform", "apply", "-auto-approve", "plan.out"], cwd=cwd)
+        os.remove(os.path.join(cwd, "plan.out"))
 
     def add_task(self, task):
         self.tasks.append(task)
@@ -279,8 +296,4 @@ if __name__ == "__main__":
 
     airfunctions_config.set("resource_prefix", "micmur-test-")
     bundler = Bundler()
-    bundler.collect_resources()
-    bundler.to_terraform()
-    bundler.terraform_apply()
-
-    # bundler.build_lambdas()
+    bundler.apply()

@@ -27,7 +27,6 @@ class AirFunctionsConfig:
     def set(self, attr_name, value):
         setattr(self, attr_name, value)
 
-
 if __name__ == "__main__":
     config = AirFunctionsConfig()
     import os
