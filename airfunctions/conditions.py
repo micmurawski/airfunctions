@@ -3,7 +3,9 @@ from dataclasses import dataclass
 from typing import Any
 
 
-def get_nested_value(data: dict, path: str, default: Any | None = None, delimiter: str = ".") -> Any:
+def get_nested_value(
+    data: dict, path: str, default: Any | None = None, delimiter: str = "."
+) -> Any:
     keys = path.split(delimiter)
     for key in keys:
         if isinstance(data, dict) and key in data:
@@ -62,8 +64,8 @@ class Condition:
 
     def __repr__(self) -> str:
         if self.b is None:
-            return f'Condition({self.operator.__name__, self.a})'
-        return f'Condition({self.operator.__name__, self.a, self.b})'
+            return f"Condition({self.operator.__name__, self.a})"
+        return f"Condition({self.operator.__name__, self.a, self.b})"
 
     def __eq__(self, o: object) -> object:
         return Condition(operator.eq, a=self, b=o)
@@ -129,7 +131,7 @@ class Condition:
         else:
             return str(arg)
 
-    def jsonata(self, top=False) -> str:
+    def jsonata(self, top=True) -> str:
         if self.b is None and self.operator == operator.not_:
             res = f"{self.operator.__name__}({self.parse_arg(self.a)})"
         else:

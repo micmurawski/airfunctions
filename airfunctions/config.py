@@ -8,6 +8,7 @@ def singleton(class_):
         if class_ not in instances:
             instances[class_] = class_(*args, **kwargs)
         return instances[class_]
+
     return getinstance
 
 
@@ -23,11 +24,18 @@ class AirFunctionsConfig:
     lambda_module_version: str = "7.20.1"
     lambda_module_source: str = "terraform-aws-modules/lambda/aws"
 
+    def set(self, attr_name, value):
+        setattr(self, attr_name, value)
+
 
 if __name__ == "__main__":
     config = AirFunctionsConfig()
     import os
-    print(config == AirFunctionsConfig(
-        aws_region=os.environ.get("AWS_REGION"),
-        aws_account_id=os.environ.get("AWS_ACCOUNT_ID")
-    ))
+
+    print(
+        config
+        == AirFunctionsConfig(
+            aws_region=os.environ.get("AWS_REGION"),
+            aws_account_id=os.environ.get("AWS_ACCOUNT_ID"),
+        )
+    )

@@ -6,7 +6,9 @@ from typing import Any
 ModuleType = type(sys)
 
 
-def get_nested_value(data: dict, path: str, default: Any | None = None, delimiter: str = ".") -> Any:
+def get_nested_value(
+    data: dict, path: str, default: Any | None = None, delimiter: str = "."
+) -> Any:
     keys = path.split(delimiter)
     for key in keys:
         if isinstance(data, dict) and key in data:
@@ -64,7 +66,7 @@ class Condition:
     b: Any
 
     def __repr__(self) -> str:
-        return f'Condition({self.operator.__name__, self.a, self.b})'
+        return f"Condition({self.operator.__name__, self.a, self.b})"
 
     def __eq__(self, o: object) -> object:
         return Condition(operator.eq, a=self, b=o)

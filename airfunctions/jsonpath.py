@@ -13,26 +13,28 @@ ModuleType = type(sys)
 # JSONPath specific implementation starts here
 class JSONPathError(Exception):
     """Base exception for JSONPath errors."""
+
     pass
 
 
 class JSONPathToken:
     """Represents a token in a JSONPath expression."""
-    ROOT = 'ROOT'          # $
-    CURRENT = 'CURRENT'    # @
-    DOT = 'DOT'            # .
-    RECURSIVE = 'RECURSIVE'  # ..
-    WILDCARD = 'WILDCARD'  # *
-    NAME = 'NAME'          # identifier
-    LBRACKET = 'LBRACKET'  # [
-    RBRACKET = 'RBRACKET'  # ]
-    LPAREN = 'LPAREN'      # (
-    RPAREN = 'RPAREN'      # )
-    COMMA = 'COMMA'        # ,
-    COLON = 'COLON'        # :
-    NUMBER = 'NUMBER'      # 123
-    STRING = 'STRING'      # 'abc'
-    FILTER = 'FILTER'      # ?
+
+    ROOT = "ROOT"  # $
+    CURRENT = "CURRENT"  # @
+    DOT = "DOT"  # .
+    RECURSIVE = "RECURSIVE"  # ..
+    WILDCARD = "WILDCARD"  # *
+    NAME = "NAME"  # identifier
+    LBRACKET = "LBRACKET"  # [
+    RBRACKET = "RBRACKET"  # ]
+    LPAREN = "LPAREN"  # (
+    RPAREN = "RPAREN"  # )
+    COMMA = "COMMA"  # ,
+    COLON = "COLON"  # :
+    NUMBER = "NUMBER"  # 123
+    STRING = "STRING"  # 'abc'
+    FILTER = "FILTER"  # ?
 
     def __init__(self, type: str, value: Any = None):
         self.type = type
@@ -77,12 +79,14 @@ class JSONPathLexer:
 
     def number(self) -> JSONPathToken:
         """Parse a number token."""
-        result = ''
-        while self.current_char is not None and (self.current_char.isdigit() or self.current_char == '-'):
+        result = ""
+        while self.current_char is not None and (
+            self.current_char.isdigit() or self.current_char == "-"
+        ):
             result += self.current_char
             self.advance()
 
-        if result.startswith('-'):
+        if result.startswith("-"):
             return JSONPathToken(JSONPathToken.NUMBER, int(result))
         return JSONPathToken(JSONPathToken.NUMBER, int(result))
 
@@ -91,9 +95,9 @@ class JSONPathLexer:
         quote_char = self.current_char  # Either ' or "
         self.advance()  # Skip the opening quote
 
-        result = ''
+        result = ""
         while self.current_char is not None and self.current_char != quote_char:
-            if self.current_char == '\\' and self.peek() == quote_char:
+            if self.current_char == "\\" and self.peek() == quote_char:
                 self.advance()  # Skip the escape character
                 result += quote_char
             else:
@@ -102,16 +106,18 @@ class JSONPathLexer:
 
         if self.current_char is None:
             self.error(
-                f"Unterminated string starting at position {self.pos - len(result) - 1}")
+                f"Unterminated string starting at position {self.pos - len(result) - 1}"
+            )
 
         self.advance()  # Skip the closing quote
         return JSONPathToken(JSONPathToken.STRING, result)
 
     def name(self) -> JSONPathToken:
         """Parse an identifier/name token."""
-        result = ''
-        while (self.current_char is not None and
-               (self.current_char.isalnum() or self.current_char == '_')):
+        result = ""
+        while self.current_char is not None and (
+            self.current_char.isalnum() or self.current_char == "_"
+        ):
             result += self.current_char
             self.advance()
 
@@ -120,67 +126,66 @@ class JSONPathLexer:
     def get_next_token(self) -> Optional[JSONPathToken]:
         """Get the next token from the input."""
         while self.current_char is not None:
-
             # Skip whitespace
             if self.current_char.isspace():
                 self.skip_whitespace()
                 continue
 
             # Root symbol
-            if self.current_char == '$':
+            if self.current_char == "$":
                 self.advance()
                 return JSONPathToken(JSONPathToken.ROOT)
 
             # Current node symbol
-            if self.current_char == '@':
+            if self.current_char == "@":
                 self.advance()
                 return JSONPathToken(JSONPathToken.CURRENT)
 
             # Dot notation
-            if self.current_char == '.':
+            if self.current_char == ".":
                 self.advance()
                 # Check for recursive descent (..)
-                if self.current_char == '.':
+                if self.current_char == ".":
                     self.advance()
                     return JSONPathToken(JSONPathToken.RECURSIVE)
                 return JSONPathToken(JSONPathToken.DOT)
 
             # Wildcard
-            if self.current_char == '*':
+            if self.current_char == "*":
                 self.advance()
                 return JSONPathToken(JSONPathToken.WILDCARD)
 
             # Brackets, parentheses, and other punctuation
-            if self.current_char == '[':
+            if self.current_char == "[":
                 self.advance()
                 return JSONPathToken(JSONPathToken.LBRACKET)
 
-            if self.current_char == ']':
+            if self.current_char == "]":
                 self.advance()
                 return JSONPathToken(JSONPathToken.RBRACKET)
 
-            if self.current_char == '(':
+            if self.current_char == "(":
                 self.advance()
                 return JSONPathToken(JSONPathToken.LPAREN)
 
-            if self.current_char == ')':
+            if self.current_char == ")":
                 self.advance()
                 return JSONPathToken(JSONPathToken.RPAREN)
 
-            if self.current_char == ',':
+            if self.current_char == ",":
                 self.advance()
                 return JSONPathToken(JSONPathToken.COMMA)
 
-            if self.current_char == ':':
+            if self.current_char == ":":
                 self.advance()
                 return JSONPathToken(JSONPathToken.COLON)
 
-            if self.current_char == '?':
+            if self.current_char == "?":
                 self.advance()
                 return JSONPathToken(JSONPathToken.FILTER)
 
             # Numbers
-            if self.current_char.isdigit() or self.current_char == '-':
+            if self.current_char.isdigit() or self.current_char == "-":
                 return self.number()
 
             # Strings
@@ -188,7 +193,7 @@ class JSONPathLexer:
                 return self.string()
 
             # Names/identifiers
-            if self.current_char.isalpha() or self.current_char == '_':
+            if self.current_char.isalpha() or self.current_char == "_":
                 return self.name()
 
             self.error(f"Unexpected character: {self.current_char}")
@@ -232,12 +237,15 @@ class JSONPathParser:
                 if self.current_token and self.current_token.type == JSONPathToken.NAME:
                     name = self.current_token.value
                     self.eat(JSONPathToken.NAME)
-                    operations.append({'op': 'field', 'name': name})
+                    operations.append({"op": "field", "name": name})
 
                 # Handle .* (wildcard)
-                elif self.current_token and self.current_token.type == JSONPathToken.WILDCARD:
+                elif (
+                    self.current_token
+                    and self.current_token.type == JSONPathToken.WILDCARD
+                ):
                     self.eat(JSONPathToken.WILDCARD)
-                    operations.append({'op': 'wildcard'})
+                    operations.append({"op": "wildcard"})
 
                 else:
                     self.error("Expected name or wildcard after dot")
@@ -249,101 +257,141 @@ class JSONPathParser:
                 if self.current_token and self.current_token.type == JSONPathToken.NAME:
                     name = self.current_token.value
                     self.eat(JSONPathToken.NAME)
-                    operations.append(
-                        {'op': 'recursive_descent', 'name': name})
+                    operations.append({"op": "recursive_descent", "name": name})
 
                 # Handle ..* (recursive wildcard)
-                elif self.current_token and self.current_token.type == JSONPathToken.WILDCARD:
+                elif (
+                    self.current_token
+                    and self.current_token.type == JSONPathToken.WILDCARD
+                ):
                     self.eat(JSONPathToken.WILDCARD)
-                    operations.append({'op': 'recursive_wildcard'})
+                    operations.append({"op": "recursive_wildcard"})
 
                 else:
-                    self.error(
-                        "Expected name or wildcard after recursive descent")
+                    self.error("Expected name or wildcard after recursive descent")
 
             elif self.current_token.type == JSONPathToken.LBRACKET:
                 self.eat(JSONPathToken.LBRACKET)
 
                 # Handle [*] (wildcard)
-                if self.current_token and self.current_token.type == JSONPathToken.WILDCARD:
+                if (
+                    self.current_token
+                    and self.current_token.type == JSONPathToken.WILDCARD
+                ):
                     self.eat(JSONPathToken.WILDCARD)
                     self.eat(JSONPathToken.RBRACKET)
-                    operations.append({'op': 'wildcard'})
+                    operations.append({"op": "wildcard"})
 
                 # Handle [number] (array index)
-                elif self.current_token and self.current_token.type == JSONPathToken.NUMBER:
+                elif (
+                    self.current_token
+                    and self.current_token.type == JSONPathToken.NUMBER
+                ):
                     index = self.current_token.value
                     self.eat(JSONPathToken.NUMBER)
 
                     # Check if this is a slice [start:end:step]
-                    if self.current_token and self.current_token.type == JSONPathToken.COLON:
+                    if (
+                        self.current_token
+                        and self.current_token.type == JSONPathToken.COLON
+                    ):
                         self.eat(JSONPathToken.COLON)
 
                         # Get end index if specified
                         end = None
-                        if self.current_token and self.current_token.type == JSONPathToken.NUMBER:
+                        if (
+                            self.current_token
+                            and self.current_token.type == JSONPathToken.NUMBER
+                        ):
                             end = self.current_token.value
                             self.eat(JSONPathToken.NUMBER)
 
                         # Check for step
                         step = 1
-                        if self.current_token and self.current_token.type == JSONPathToken.COLON:
+                        if (
+                            self.current_token
+                            and self.current_token.type == JSONPathToken.COLON
+                        ):
                             self.eat(JSONPathToken.COLON)
-                            if self.current_token and self.current_token.type == JSONPathToken.NUMBER:
+                            if (
+                                self.current_token
+                                and self.current_token.type == JSONPathToken.NUMBER
+                            ):
                                 step = self.current_token.value
                                 self.eat(JSONPathToken.NUMBER)
 
                         self.eat(JSONPathToken.RBRACKET)
                         operations.append(
-                            {'op': 'slice', 'start': index, 'end': end, 'step': step})
+                            {"op": "slice", "start": index, "end": end, "step": step}
+                        )
 
                     # Check if this is part of a multi-index [1,2,3]
-                    elif self.current_token and self.current_token.type == JSONPathToken.COMMA:
+                    elif (
+                        self.current_token
+                        and self.current_token.type == JSONPathToken.COMMA
+                    ):
                         indices = [index]
-                        while self.current_token and self.current_token.type == JSONPathToken.COMMA:
+                        while (
+                            self.current_token
+                            and self.current_token.type == JSONPathToken.COMMA
+                        ):
                             self.eat(JSONPathToken.COMMA)
-                            if self.current_token and self.current_token.type == JSONPathToken.NUMBER:
+                            if (
+                                self.current_token
+                                and self.current_token.type == JSONPathToken.NUMBER
+                            ):
                                 indices.append(self.current_token.value)
                                 self.eat(JSONPathToken.NUMBER)
                             else:
-                                self.error(
-                                    "Expected number after comma in multi-index")
+                                self.error("Expected number after comma in multi-index")
 
                         self.eat(JSONPathToken.RBRACKET)
-                        operations.append(
-                            {'op': 'multi_index', 'indices': indices})
+                        operations.append({"op": "multi_index", "indices": indices})
 
                     # Single index
                     else:
                         self.eat(JSONPathToken.RBRACKET)
-                        operations.append({'op': 'index', 'index': index})
+                        operations.append({"op": "index", "index": index})
 
                 # Handle ['name'] or ["name"] (quoted field name)
-                elif self.current_token and self.current_token.type == JSONPathToken.STRING:
+                elif (
+                    self.current_token
+                    and self.current_token.type == JSONPathToken.STRING
+                ):
                     name = self.current_token.value
                     self.eat(JSONPathToken.STRING)
 
                     # Check if this is part of a multi-name ['name1','name2']
-                    if self.current_token and self.current_token.type == JSONPathToken.COMMA:
+                    if (
+                        self.current_token
+                        and self.current_token.type == JSONPathToken.COMMA
+                    ):
                         names = [name]
-                        while self.current_token and self.current_token.type == JSONPathToken.COMMA:
+                        while (
+                            self.current_token
+                            and self.current_token.type == JSONPathToken.COMMA
+                        ):
                             self.eat(JSONPathToken.COMMA)
-                            if self.current_token and self.current_token.type == JSONPathToken.STRING:
+                            if (
+                                self.current_token
+                                and self.current_token.type == JSONPathToken.STRING
+                            ):
                                 names.append(self.current_token.value)
                                 self.eat(JSONPathToken.STRING)
                             else:
-                                self.error(
-                                    "Expected string after comma in multi-name")
+                                self.error("Expected string after comma in multi-name")
 
                         self.eat(JSONPathToken.RBRACKET)
-                        operations.append(
-                            {'op': 'multi_field', 'names': names})
+                        operations.append({"op": "multi_field", "names": names})
                     else:
                         self.eat(JSONPathToken.RBRACKET)
-                        operations.append({'op': 'field', 'name': name})
+                        operations.append({"op": "field", "name": name})
 
                 # Handle filter expressions [?(...)]
-                elif self.current_token and self.current_token.type == JSONPathToken.FILTER:
+                elif (
+                    self.current_token
+                    and self.current_token.type == JSONPathToken.FILTER
+                ):
                     self.eat(JSONPathToken.FILTER)
                     # In a real implementation, we would parse filter expressions here
                     # For simplicity, we'll just capture the entire filter text
@@ -353,7 +401,7 @@ class JSONPathParser:
                     filter_expr = "..."  # Placeholder
                     self.eat(JSONPathToken.RPAREN)
                     self.eat(JSONPathToken.RBRACKET)
-                    operations.append({'op': 'filter', 'expr': filter_expr})
+                    operations.append({"op": "filter", "expr": filter_expr})
 
                 else:
                     self.error("Unexpected token inside brackets")
@@ -379,44 +427,50 @@ class JSONPathEvaluator:
 
         return result
 
-    def _apply_operation(self, operation: Dict[str, Any], nodes: List[Any]) -> List[Any]:
+    def _apply_operation(
+        self, operation: Dict[str, Any], nodes: List[Any]
+    ) -> List[Any]:
         """Apply a single operation to a list of nodes."""
-        op_type = operation['op']
+        op_type = operation["op"]
         result = []
 
-        if op_type == 'field':
+        if op_type == "field":
             for node in nodes:
-                if isinstance(node, dict) and operation['name'] in node:
-                    result.append(node[operation['name']])
+                if isinstance(node, dict) and operation["name"] in node:
+                    result.append(node[operation["name"]])
 
-        elif op_type == 'wildcard':
+        elif op_type == "wildcard":
             for node in nodes:
                 if isinstance(node, dict):
                     result.extend(node.values())
                 elif isinstance(node, list):
                     result.extend(node)
 
-        elif op_type == 'index':
+        elif op_type == "index":
             for node in nodes:
-                if isinstance(node, list) and 0 <= operation['index'] < len(node):
-                    result.append(node[operation['index']])
-                elif isinstance(node, list) and operation['index'] < 0 and abs(operation['index']) <= len(node):
+                if isinstance(node, list) and 0 <= operation["index"] < len(node):
+                    result.append(node[operation["index"]])
+                elif (
+                    isinstance(node, list)
+                    and operation["index"] < 0
+                    and abs(operation["index"]) <= len(node)
+                ):
                     # Handle negative indices (count from the end)
-                    result.append(node[operation['index']])
+                    result.append(node[operation["index"]])
 
-        elif op_type == 'multi_index':
+        elif op_type == "multi_index":
             for node in nodes:
                 if isinstance(node, list):
-                    for idx in operation['indices']:
+                    for idx in operation["indices"]:
                         if 0 <= idx < len(node):
                             result.append(node[idx])
                         elif idx < 0 and abs(idx) <= len(node):
                             result.append(node[idx])
 
-        elif op_type == 'slice':
-            start = operation['start']
-            end = operation['end']
-            step = operation['step']
+        elif op_type == "slice":
+            start = operation["start"]
+            end = operation["end"]
+            step = operation["step"]
 
             for node in nodes:
                 if isinstance(node, list):
@@ -424,14 +478,14 @@ class JSONPathEvaluator:
                         end = len(node)
                     result.extend(node[start:end:step])
 
-        elif op_type == 'multi_field':
+        elif op_type == "multi_field":
             for node in nodes:
                 if isinstance(node, dict):
-                    for name in operation['names']:
+                    for name in operation["names"]:
                         if name in node:
                             result.append(node[name])
 
-        elif op_type == 'recursive_descent':
+        elif op_type == "recursive_descent":
             # Implementation for recursive descent
             def collect_matching(current_node, field_name):
                 matches = []
@@ -453,9 +507,9 @@ class JSONPathEvaluator:
                 return matches
 
             for node in nodes:
-                result.extend(collect_matching(node, operation['name']))
+                result.extend(collect_matching(node, operation["name"]))
 
-        elif op_type == 'recursive_wildcard':
+        elif op_type == "recursive_wildcard":
             # Implementation for recursive wildcard
             def collect_all(current_node):
                 matches = []
@@ -481,7 +535,7 @@ class JSONPathEvaluator:
             for node in nodes:
                 result.extend(collect_all(node))
 
-        elif op_type == 'filter':
+        elif op_type == "filter":
             # Simplified filter implementation
             # In a real implementation, we would evaluate filter expressions
             # This is a placeholder
@@ -500,14 +554,16 @@ class JSONPathIntrinsicFunctions:
         Replaces {} placeholders with argument values.
         """
         # Replace escaped characters
-        template = template.replace(
-            '\\{', '{').replace('\\}', '}').replace('\\\\', '\\')
+        template = (
+            template.replace("\\{", "{").replace("\\}", "}").replace("\\\\", "\\")
+        )
 
         # Count number of {} pairs
-        placeholders = template.count('{}')
+        placeholders = template.count("{}")
         if placeholders != len(args):
             raise JSONPathError(
-                f"States.Format expected {placeholders} arguments, got {len(args)}")
+                f"States.Format expected {placeholders} arguments, got {len(args)}"
+            )
 
         # Format the string
         return template.format(*args)
@@ -550,15 +606,17 @@ class JSONPathIntrinsicFunctions:
         """
         if not isinstance(arr, list):
             raise JSONPathError(
-                "States.ArrayPartition: First argument must be an array")
+                "States.ArrayPartition: First argument must be an array"
+            )
 
         if not isinstance(chunk_size, int) or chunk_size <= 0:
             raise JSONPathError(
-                "States.ArrayPartition: Second argument must be a positive integer")
+                "States.ArrayPartition: Second argument must be a positive integer"
+            )
 
         result = []
         for i in range(0, len(arr), chunk_size):
-            result.append(arr[i:i + chunk_size])
+            result.append(arr[i : i + chunk_size])
 
         return result
 
@@ -569,8 +627,7 @@ class JSONPathIntrinsicFunctions:
         Checks if an array contains a specific value.
         """
         if not isinstance(arr, list):
-            raise JSONPathError(
-                "States.ArrayContains: First argument must be an array")
+            raise JSONPathError("States.ArrayContains: First argument must be an array")
 
         # Use deep comparison for objects
         if isinstance(value, (dict, list)):
@@ -589,8 +646,7 @@ class JSONPathIntrinsicFunctions:
         Creates a new array containing a range of integers.
         """
         if not all(isinstance(x, int) for x in [start, end, step]):
-            raise JSONPathError(
-                "States.ArrayRange: All arguments must be integers")
+            raise JSONPathError("States.ArrayRange: All arguments must be integers")
 
         if step == 0:
             raise JSONPathError("States.ArrayRange: Step cannot be zero")
@@ -599,7 +655,8 @@ class JSONPathIntrinsicFunctions:
 
         if len(result) > 1000:
             raise JSONPathError(
-                "States.ArrayRange: Result array cannot contain more than 1000 items")
+                "States.ArrayRange: Result array cannot contain more than 1000 items"
+            )
 
         return result
 
@@ -610,16 +667,17 @@ class JSONPathIntrinsicFunctions:
         Returns the item at the specified index in an array.
         """
         if not isinstance(arr, list):
-            raise JSONPathError(
-                "States.ArrayGetItem: First argument must be an array")
+            raise JSONPathError("States.ArrayGetItem: First argument must be an array")
 
         if not isinstance(index, int):
             raise JSONPathError(
-                "States.ArrayGetItem: Second argument must be an integer")
+                "States.ArrayGetItem: Second argument must be an integer"
+            )
 
         if index < 0 or index >= len(arr):
             raise JSONPathError(
-                f"States.ArrayGetItem: Index {index} out of bounds for array of length {len(arr)}")
+                f"States.ArrayGetItem: Index {index} out of bounds for array of length {len(arr)}"
+            )
 
         return arr[index]
 
@@ -630,8 +688,7 @@ class JSONPathIntrinsicFunctions:
         Returns the length of an array.
         """
         if not isinstance(arr, list):
-            raise JSONPathError(
-                "States.ArrayLength: Argument must be an array")
+            raise JSONPathError("States.ArrayLength: Argument must be an array")
 
         return len(arr)
 
@@ -642,8 +699,7 @@ class JSONPathIntrinsicFunctions:
         Returns an array with duplicate values removed.
         """
         if not isinstance(arr, list):
-            raise JSONPathError(
-                "States.ArrayUnique: Argument must be an array")
+            raise JSONPathError("States.ArrayUnique: Argument must be an array")
 
         # Handle complex objects by converting to JSON strings for comparison
         result = []
@@ -669,14 +725,14 @@ class JSONPathIntrinsicFunctions:
         Encodes a string using base64 encoding.
         """
         if not isinstance(data, str):
-            raise JSONPathError(
-                "States.Base64Encode: Argument must be a string")
+            raise JSONPathError("States.Base64Encode: Argument must be a string")
 
         if len(data) > 10000:
             raise JSONPathError(
-                "States.Base64Encode: Input string cannot be longer than 10000 characters")
+                "States.Base64Encode: Input string cannot be longer than 10000 characters"
+            )
 
-        return base64.b64encode(data.encode('utf-8')).decode('utf-8')
+        return base64.b64encode(data.encode("utf-8")).decode("utf-8")
 
     @staticmethod
     def base64_decode(data: str) -> str:
@@ -685,15 +741,15 @@ class JSONPathIntrinsicFunctions:
         Decodes a base64 encoded string.
         """
         if not isinstance(data, str):
-            raise JSONPathError(
-                "States.Base64Decode: Argument must be a string")
+            raise JSONPathError("States.Base64Decode: Argument must be a string")
 
         if len(data) > 10000:
             raise JSONPathError(
-                "States.Base64Decode: Input string cannot be longer than 10000 characters")
+                "States.Base64Decode: Input string cannot be longer than 10000 characters"
+            )
 
         try:
-            return base64.b64decode(data).decode('utf-8')
+            return base64.b64decode(data).decode("utf-8")
         except Exception as e:
             raise JSONPathError(f"States.Base64Decode error: {str(e)}")
 
@@ -704,15 +760,15 @@ class JSONPathIntrinsicFunctions:
         Calculates a hash value for the input data using the specified algorithm.
         """
         if not isinstance(algorithm, str):
-            raise JSONPathError(
-                "States.Hash: Second argument must be a string")
+            raise JSONPathError("States.Hash: Second argument must be a string")
 
         algorithm = algorithm.upper()
-        valid_algorithms = {'MD5', 'SHA-1', 'SHA-256', 'SHA-384', 'SHA-512'}
+        valid_algorithms = {"MD5", "SHA-1", "SHA-256", "SHA-384", "SHA-512"}
 
         if algorithm not in valid_algorithms:
             raise JSONPathError(
-                f"States.Hash: Algorithm must be one of {valid_algorithms}")
+                f"States.Hash: Algorithm must be one of {valid_algorithms}"
+            )
 
         # Convert data to JSON string if it's not already a string
         if not isinstance(data, str):
@@ -720,33 +776,34 @@ class JSONPathIntrinsicFunctions:
 
         if len(data) > 10000:
             raise JSONPathError(
-                "States.Hash: Input data too large (max 10000 characters)")
+                "States.Hash: Input data too large (max 10000 characters)"
+            )
 
         # Map algorithm names to hashlib functions
         hash_funcs = {
-            'MD5': hashlib.md5,
-            'SHA-1': hashlib.sha1,
-            'SHA-256': hashlib.sha256,
-            'SHA-384': hashlib.sha384,
-            'SHA-512': hashlib.sha512
+            "MD5": hashlib.md5,
+            "SHA-1": hashlib.sha1,
+            "SHA-256": hashlib.sha256,
+            "SHA-384": hashlib.sha384,
+            "SHA-512": hashlib.sha512,
         }
 
         hash_func = hash_funcs[algorithm]
-        return hash_func(data.encode('utf-8')).hexdigest()
+        return hash_func(data.encode("utf-8")).hexdigest()
 
     @staticmethod
-    def json_merge(obj1: Dict[str, Any], obj2: Dict[str, Any], deep_merge: bool = False) -> Dict[str, Any]:
+    def json_merge(
+        obj1: Dict[str, Any], obj2: Dict[str, Any], deep_merge: bool = False
+    ) -> Dict[str, Any]:
         """
         Implements States.JsonMerge function.
         Merges two JSON objects into a single object.
         """
         if not isinstance(obj1, dict) or not isinstance(obj2, dict):
-            raise JSONPathError(
-                "States.JsonMerge: First two arguments must be objects")
+            raise JSONPathError("States.JsonMerge: First two arguments must be objects")
 
         if not isinstance(deep_merge, bool):
-            raise JSONPathError(
-                "States.JsonMerge: Third argument must be a boolean")
+            raise JSONPathError("States.JsonMerge: Third argument must be a boolean")
 
         if not deep_merge:
             # Shallow merge
@@ -756,7 +813,11 @@ class JSONPathIntrinsicFunctions:
             def deep_merge_dicts(d1, d2):
                 result = d1.copy()
                 for k, v in d2.items():
-                    if k in result and isinstance(result[k], dict) and isinstance(v, dict):
+                    if (
+                        k in result
+                        and isinstance(result[k], dict)
+                        and isinstance(v, dict)
+                    ):
                         result[k] = deep_merge_dicts(result[k], v)
                     else:
                         result[k] = v
@@ -772,7 +833,8 @@ class JSONPathIntrinsicFunctions:
         """
         if not isinstance(start, int) or not isinstance(end, int):
             raise JSONPathError(
-                "States.MathRandom: First two arguments must be integers")
+                "States.MathRandom: First two arguments must be integers"
+            )
 
         if seed is not None:
             # Use seed for deterministic results
@@ -802,12 +864,10 @@ class JSONPathIntrinsicFunctions:
         Splits a string into an array of values using the specified delimiter.
         """
         if not isinstance(string, str):
-            raise JSONPathError(
-                "States.StringSplit: First argument must be a string")
+            raise JSONPathError("States.StringSplit: First argument must be a string")
 
         if not isinstance(delimiter, str):
-            raise JSONPathError(
-                "States.StringSplit: Second argument must be a string")
+            raise JSONPathError("States.StringSplit: Second argument must be a string")
 
         return string.split(delimiter)
 
@@ -825,27 +885,29 @@ class PayloadTemplateProcessor:
 
     def __init__(self):
         self.intrinsic_functions = {
-            'States.Format': JSONPathIntrinsicFunctions.format,
-            'States.StringToJson': JSONPathIntrinsicFunctions.string_to_json,
-            'States.JsonToString': JSONPathIntrinsicFunctions.json_to_string,
-            'States.Array': JSONPathIntrinsicFunctions.array,
-            'States.ArrayPartition': JSONPathIntrinsicFunctions.array_partition,
-            'States.ArrayContains': JSONPathIntrinsicFunctions.array_contains,
-            'States.ArrayRange': JSONPathIntrinsicFunctions.array_range,
-            'States.ArrayGetItem': JSONPathIntrinsicFunctions.array_get_item,
-            'States.ArrayLength': JSONPathIntrinsicFunctions.array_length,
-            'States.ArrayUnique': JSONPathIntrinsicFunctions.array_unique,
-            'States.Base64Encode': JSONPathIntrinsicFunctions.base64_encode,
-            'States.Base64Decode': JSONPathIntrinsicFunctions.base64_decode,
-            'States.Hash': JSONPathIntrinsicFunctions.hash,
-            'States.JsonMerge': JSONPathIntrinsicFunctions.json_merge,
-            'States.MathRandom': JSONPathIntrinsicFunctions.math_random,
-            'States.MathAdd': JSONPathIntrinsicFunctions.math_add,
-            'States.StringSplit': JSONPathIntrinsicFunctions.string_split,
-            'States.UUID': JSONPathIntrinsicFunctions.uuid
+            "States.Format": JSONPathIntrinsicFunctions.format,
+            "States.StringToJson": JSONPathIntrinsicFunctions.string_to_json,
+            "States.JsonToString": JSONPathIntrinsicFunctions.json_to_string,
+            "States.Array": JSONPathIntrinsicFunctions.array,
+            "States.ArrayPartition": JSONPathIntrinsicFunctions.array_partition,
+            "States.ArrayContains": JSONPathIntrinsicFunctions.array_contains,
+            "States.ArrayRange": JSONPathIntrinsicFunctions.array_range,
+            "States.ArrayGetItem": JSONPathIntrinsicFunctions.array_get_item,
+            "States.ArrayLength": JSONPathIntrinsicFunctions.array_length,
+            "States.ArrayUnique": JSONPathIntrinsicFunctions.array_unique,
+            "States.Base64Encode": JSONPathIntrinsicFunctions.base64_encode,
+            "States.Base64Decode": JSONPathIntrinsicFunctions.base64_decode,
+            "States.Hash": JSONPathIntrinsicFunctions.hash,
+            "States.JsonMerge": JSONPathIntrinsicFunctions.json_merge,
+            "States.MathRandom": JSONPathIntrinsicFunctions.math_random,
+            "States.MathAdd": JSONPathIntrinsicFunctions.math_add,
+            "States.StringSplit": JSONPathIntrinsicFunctions.string_split,
+            "States.UUID": JSONPathIntrinsicFunctions.uuid,
         }
 
-    def process_template(self, template: Any, input_data: Any, context_data: Any = None) -> Any:
+    def process_template(
+        self, template: Any, input_data: Any, context_data: Any = None
+    ) -> Any:
         """Process a payload template by evaluating paths and intrinsic functions."""
         if context_data is None:
             context_data = {}
@@ -854,38 +916,40 @@ class PayloadTemplateProcessor:
             # Process dictionary template
             result = {}
             for key, value in template.items():
-                if key.endswith('.$'):
+                if key.endswith(".$"):
                     # Path substitution
                     new_key = key[:-2]
                     if isinstance(value, str):
-                        if value.startswith('$$'):
+                        if value.startswith("$$"):
                             # Context object path
                             path_value = value[1:]  # Remove one $
-                            path_result = self.evaluate_path(
-                                path_value, context_data)
+                            path_result = self.evaluate_path(path_value, context_data)
                             result[new_key] = path_result
-                        elif value.startswith('$'):
+                        elif value.startswith("$"):
                             # Input data path
                             path_result = self.evaluate_path(value, input_data)
                             result[new_key] = path_result
                         else:
                             # Intrinsic function
                             func_result = self.evaluate_intrinsic_function(
-                                value, input_data, context_data)
+                                value, input_data, context_data
+                            )
                             result[new_key] = func_result
                     else:
                         # Not a string, use as is
                         result[new_key] = value
                 else:
                     # Regular key, process value recursively
-                    result[key] = self.process_template(
-                        value, input_data, context_data)
+                    result[key] = self.process_template(value, input_data, context_data)
 
             return result
 
         elif isinstance(template, list):
             # Process list template
-            return [self.process_template(item, input_data, context_data) for item in template]
+            return [
+                self.process_template(item, input_data, context_data)
+                for item in template
+            ]
 
         else:
             # Scalar value, return as is
@@ -912,14 +976,15 @@ class PayloadTemplateProcessor:
         else:
             return results
 
-    def evaluate_intrinsic_function(self, func_str: str, input_data: Any, context_data: Any) -> Any:
+    def evaluate_intrinsic_function(
+        self, func_str: str, input_data: Any, context_data: Any
+    ) -> Any:
         """Evaluate an intrinsic function."""
         # Simple regex-based parser for intrinsic functions
         # In a real implementation, you'd want a more robust parser
-        func_match = re.match(r'^([A-Za-z0-9_.]+)\((.*)\)', func_str)
+        func_match = re.match(r"^([A-Za-z0-9_.]+)\((.*)\)", func_str)
         if not func_match:
-            raise JSONPathError(
-                f"Invalid intrinsic function format: {func_str}")
+            raise JSONPathError(f"Invalid intrinsic function format: {func_str}")
 
         func_name = func_match.group(1)
         if func_name not in self.intrinsic_functions:
@@ -946,7 +1011,12 @@ class PayloadTemplateProcessor:
                     i += 1
                     continue
 
-                elif in_string and char == '\\' and i + 1 < len(args_str) and args_str[i + 1] == string_quote:
+                elif (
+                    in_string
+                    and char == "\\"
+                    and i + 1 < len(args_str)
+                    and args_str[i + 1] == string_quote
+                ):
                     # Escaped quote in string
                     current_arg += string_quote
                     i += 2
@@ -958,10 +1028,9 @@ class PayloadTemplateProcessor:
                     i += 1
                     continue
 
-                elif not in_string and char == ',':
+                elif not in_string and char == ",":
                     # Argument separator
-                    args.append(self._parse_arg(
-                        current_arg.strip(), input_data))
+                    args.append(self._parse_arg(current_arg.strip(), input_data))
                     current_arg = ""
                     i += 1
                     continue
@@ -994,27 +1063,27 @@ class PayloadTemplateProcessor:
             # String literal with double quotes
             return arg_str[1:-1]
 
-        elif arg_str.startswith('$'):
+        elif arg_str.startswith("$"):
             # Path
             return self.evaluate_path(arg_str, input_data)
 
-        elif arg_str.isdigit() or (arg_str.startswith('-') and arg_str[1:].isdigit()):
+        elif arg_str.isdigit() or (arg_str.startswith("-") and arg_str[1:].isdigit()):
             # Integer
             return int(arg_str)
 
-        elif arg_str == 'null':
+        elif arg_str == "null":
             # Null value
             return None
 
-        elif arg_str == 'true':
+        elif arg_str == "true":
             # Boolean true
             return True
 
-        elif arg_str == 'false':
+        elif arg_str == "false":
             # Boolean false
             return False
 
-        elif '(' in arg_str and ')' in arg_str:
+        elif "(" in arg_str and ")" in arg_str:
             # Nested function
             return self.evaluate_intrinsic_function(arg_str, input_data)
 
@@ -1033,22 +1102,19 @@ class JSONPath:
         """Apply a JSONPath to data and return the result."""
         return self.processor.evaluate_path(path, data)
 
-    def process_payload_template(self, template: Any, input_data: Any, context_data: Any = None) -> Any:
+    def process_payload_template(
+        self, template: Any, input_data: Any, context_data: Any = None
+    ) -> Any:
         """Process a payload template."""
         return self.processor.process_template(template, input_data, context_data)
 
 
 # Example usage functions
 
+
 def test_jsonpath_basic():
     """Test basic JSONPath functionality."""
-    data = {
-        "foo": 123,
-        "bar": ["a", "b", "c"],
-        "car": {
-            "cdr": True
-        }
-    }
+    data = {"foo": 123, "bar": ["a", "b", "c"], "car": {"cdr": True}}
 
     jsonpath = JSONPath()
 
@@ -1073,31 +1139,28 @@ def test_jsonpath_advanced():
                     "category": "reference",
                     "author": "Nigel Rees",
                     "title": "Sayings of the Century",
-                    "price": 8.95
+                    "price": 8.95,
                 },
                 {
                     "category": "fiction",
                     "author": "Evelyn Waugh",
                     "title": "Sword of Honour",
-                    "price": 12.99
+                    "price": 12.99,
                 },
                 {
                     "category": "fiction",
                     "author": "Herman Melville",
                     "title": "Moby Dick",
-                    "price": 8.99
+                    "price": 8.99,
                 },
                 {
                     "category": "fiction",
                     "author": "J. R. R. Tolkien",
                     "title": "The Lord of the Rings",
-                    "price": 22.99
-                }
+                    "price": 22.99,
+                },
             ],
-            "bicycle": {
-                "color": "red",
-                "price": 19.95
-            }
+            "bicycle": {"color": "red", "price": 19.95},
         }
     }
 
@@ -1122,25 +1185,19 @@ def test_intrinsic_functions():
     jsonpath = JSONPath()
 
     # Test States.Format
-    template = {
-        "greeting.$": "States.Format('Hello, {}!', $.name)"
-    }
+    template = {"greeting.$": "States.Format('Hello, {}!', $.name)"}
     input_data = {"name": "World"}
     result = jsonpath.process_payload_template(template, input_data)
     assert result["greeting"] == "Hello, World!"
 
     # Test States.Array
-    template = {
-        "items.$": "States.Array($.item1, $.item2, $.item3)"
-    }
+    template = {"items.$": "States.Array($.item1, $.item2, $.item3)"}
     input_data = {"item1": 1, "item2": "two", "item3": True}
     result = jsonpath.process_payload_template(template, input_data)
     assert result["items"] == [1, "two", True]
 
     # Test States.StringToJson
-    template = {
-        "parsed.$": "States.StringToJson($.jsonString)"
-    }
+    template = {"parsed.$": "States.StringToJson($.jsonString)"}
     input_data = {"jsonString": '{"name": "John", "age": 30}'}
     result = jsonpath.process_payload_template(template, input_data)
     assert result["parsed"]["name"] == "John"
@@ -1154,29 +1211,20 @@ def test_payload_template():
     jsonpath = JSONPath()
 
     # Setup test data
-    input_data = {
-        "flagged": 7,
-        "vals": [0, 10, 20, 30, 40, 50]
-    }
+    input_data = {"flagged": 7, "vals": [0, 10, 20, 30, 40, 50]}
 
-    context_data = {
-        "DayOfWeek": "TUESDAY"
-    }
+    context_data = {"DayOfWeek": "TUESDAY"}
 
     # Define a payload template like in the documentation
     template = {
         "flagged": True,
-        "parts": {
-            "first.$": "$.vals[0]",
-            "last3.$": "$.vals[-3:]"
-        },
+        "parts": {"first.$": "$.vals[0]", "last3.$": "$.vals[-3:]"},
         "weekday.$": "$$.DayOfWeek",
-        "formattedOutput.$": "States.Format('Today is {}', $$.DayOfWeek)"
+        "formattedOutput.$": "States.Format('Today is {}', $$.DayOfWeek)",
     }
 
     # Process the template
-    result = jsonpath.process_payload_template(
-        template, input_data, context_data)
+    result = jsonpath.process_payload_template(template, input_data, context_data)
 
     # Verify results
     assert result["flagged"] is True
@@ -1207,25 +1255,20 @@ def test_jsonpath_for_aws_states():
                     "operation": "sum",
                     "metadata": {
                         "timestamp.$": "States.Format('{}', $.timestamp)",
-                        "source": "jsonpath-test"
-                    }
+                        "source": "jsonpath-test",
+                    },
                 },
                 "ResultPath": "$.result",
                 "OutputPath": "$",
-                "End": True
+                "End": True,
             }
-        }
+        },
     }
 
     # Sample input
     input_data = {
-        "data": {
-            "items": [1, 2, 3, 4, 5],
-            "timestamp": "2025-03-04T12:00:00Z"
-        },
-        "metadata": {
-            "requestId": "12345"
-        }
+        "data": {"items": [1, 2, 3, 4, 5], "timestamp": "2025-03-04T12:00:00Z"},
+        "metadata": {"requestId": "12345"},
     }
 
     # Simulate state machine execution
@@ -1235,15 +1278,15 @@ def test_jsonpath_for_aws_states():
 
     # 2. Apply InputPath
     if "InputPath" in current_state:
-        effective_input = jsonpath.apply(
-            current_state["InputPath"], input_data)
+        effective_input = jsonpath.apply(current_state["InputPath"], input_data)
     else:
         effective_input = input_data
 
     # 3. Apply Parameters
     if "Parameters" in current_state:
         effective_input = jsonpath.process_payload_template(
-            current_state["Parameters"], effective_input)
+            current_state["Parameters"], effective_input
+        )
 
     # 4. Simulate Task execution (here we're just summing the values)
     if effective_input["operation"] == "sum":
@@ -1294,7 +1337,6 @@ if __name__ == "__main__":
     test_payload_template()
     test_jsonpath_for_aws_states()
     jsonpath = JSONPath()
-    res = jsonpath.apply("$.resultadosParalelos", {
-                         "resultadosParalelos": [1, 2, 3]})
+    res = jsonpath.apply("$.resultadosParalelos", {"resultadosParalelos": [1, 2, 3]})
     raise Exception(res)
     print("All tests passed! JSONPath implementation is working correctly.")

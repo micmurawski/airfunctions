@@ -3,7 +3,7 @@ from collections import deque
 from typing import Generic, Optional, TypeVar
 
 ModuleType = type(sys)
-T = TypeVar('T')  # Type variable for the context objects
+T = TypeVar("T")  # Type variable for the context objects
 
 
 class ContextManagerMeta(type):
@@ -11,6 +11,7 @@ class ContextManagerMeta(type):
     Metaclass for creating context manager classes for different object types.
     This allows the creation of context management capabilities for any class, not just StateMachine.
     """
+
     def __new__(mcs, name, bases, attrs):
         # Create a new class with the provided attributes
         cls = super().__new__(mcs, name, bases, attrs)
@@ -28,6 +29,7 @@ class ContextManager(Generic[T], metaclass=ContextManagerMeta):
     Generic context manager for any type of objects.
     Allows pushing, popping, and getting context objects of the specified type.
     """
+
     _context: deque[T] = deque()
     autoregistered: set[tuple[T, ModuleType]] = set()
     curr_registered_module_name: Optional[str] = None

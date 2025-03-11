@@ -39,9 +39,11 @@ def find_ends(step: str, content: dict) -> list[str]:
     while queue:
         nxt = queue.popleft()
 
-        while content["States"][nxt]['Type'] != "Choice" and not content["States"][nxt].get("End", False):
+        while content["States"][nxt]["Type"] != "Choice" and not content["States"][
+            nxt
+        ].get("End", False):
             nxt = content["States"][nxt]["Next"]
-        if content["States"][nxt]['Type'] == "Choice":
+        if content["States"][nxt]["Type"] == "Choice":
             collect_steps(nxt, content, queue)
             continue
 
@@ -162,15 +164,15 @@ class Branch:
 
 class Step:
     def __init__(
-            self,
-            name: str,
-            type: str,
-            query_language: str | None = None,
-            input_path: str | None = None,
-            result_path: str | None = None,
-            output_path: str | None = None,
-            comment: str | None = None,
-            branch: Branch | None = None,
+        self,
+        name: str,
+        type: str,
+        query_language: str | None = None,
+        input_path: str | None = None,
+        result_path: str | None = None,
+        output_path: str | None = None,
+        comment: str | None = None,
+        branch: Branch | None = None,
     ):
         self.name = name
         self._content = {"Type": type, "End": True}
@@ -247,9 +249,7 @@ class Step:
         if isinstance(next, Branch):
             if self.branch:
                 new_branch = Branch.merge_branches(
-                    self.branch,
-                    next,
-                    merge_at=(self.name, next.head.name)
+                    self.branch, next, merge_at=(self.name, next.head.name)
                 )
                 return new_branch
             else:
@@ -289,14 +289,16 @@ class Step:
         interval_seconds: int,
         max_attempts: int,
         max_delay_seconds: int | None = None,
-        back_off_rate: float | None = None
+        back_off_rate: float | None = None,
     ):
         if "Retry" not in self._content:
             self._content["Retry"] = []
 
         retry = {}
         if isinstance(error_equals, (str, Exception)):
-            retry["ErrorEquals"] = [str(error_equals), ]
+            retry["ErrorEquals"] = [
+                str(error_equals),
+            ]
         else:
             retry["ErrorEquals"] = [str(err) for err in error_equals]
 
@@ -317,7 +319,7 @@ class Step:
 
         _catch = {}
         if isinstance(error_equals, (str, Exception)):
-            _catch["ErrorEquals"] = (str(error_equals), )
+            _catch["ErrorEquals"] = (str(error_equals),)
         else:
             _catch["ErrorEquals"] = tuple([str(err) for err in error_equals])
 
@@ -326,8 +328,12 @@ class Step:
         _next = self.catchers[_key]
 
         try:
-            idx, _ = next(filter(
-                lambda _, item: item["ErrorEquals"] == _key, enumerate(self._content["Catch"])))
+            idx, _ = next(
+                filter(
+                    lambda _, item: item["ErrorEquals"] == _key,
+                    enumerate(self._content["Catch"]),
+                )
+            )
             self._content["Catch"][idx]["Next"] = _next.name
         except StopIteration:
             _catch["Next"] = _next.name
@@ -336,7 +342,7 @@ class Step:
 
     def catcher(self, error_equals: list[str, Exception] | Exception | str) -> Any:
         if isinstance(error_equals, (str, Exception)):
-            _key = (str(error_equals), )
+            _key = (str(error_equals),)
         else:
             _key = tuple([str(err) for err in error_equals])
 
@@ -350,16 +356,28 @@ class Step:
 
 
 class Task(Step):
-    def __init__(self,
-                 name: str,
-                 resource: str,
-                 parameters: dict | None = None,
-                 query_language: str | None = None,
-                 input_path: str | None = None,
-                 result_path: str | None = None, output_path: str | None = None,
-                 comment: str | None = None, **kwargs):
-        super().__init__(name, "Task", query_language, input_path,
-                         result_path, output_path, comment, **kwargs)
+    def __init__(
+        self,
+        name: str,
+        resource: str,
+        parameters: dict | None = None,
+        query_language: str | None = None,
+        input_path: str | None = None,
+        result_path: str | None = None,
+        output_path: str | None = None,
+        comment: str | None = None,
+        **kwargs,
+    ):
+        super().__init__(
+            name,
+            "Task",
+            query_language,
+            input_path,
+            result_path,
+            output_path,
+            comment,
+            **kwargs,
+        )
 
         self.parameters = parameters
         self.resource = resource
@@ -372,14 +390,18 @@ class Task(Step):
 class Choice(Step):
     end = False
 
-    def __init__(self,
-                 name: str,
-                 query_language: str | None = None,
-                 input_path: str | None = None,
-                 default: Step | None = None,
-                 comment: str | None = None, **kwargs):
-        super().__init__(name, "Choice", query_language,
-                         input_path, None, None, comment, **kwargs)
+    def __init__(
+        self,
+        name: str,
+        # query_language: str | None = None,
+        input_path: str | None = None,
+        default: Step | None = None,
+        comment: str | None = None,
+        **kwargs,
+    ):
+        super().__init__(
+            name, "Choice", "JSONata", input_path, None, None, comment, **kwargs
+        )
         self._content.pop("End", None)
 
         self.choices: dict[Condition, str] = {}
@@ -427,25 +449,34 @@ class Choice(Step):
             choices.append(f"default>>{self.default}")
 
         return (
-            f"{self._content["Type"]}(name={self.name}, choices={', '.join(choices)})"
+            f"{self._content['Type']}(name={self.name}, choices={', '.join(choices)})"
         )
 
 
 class Parallel(Step):
     def __init__(
         self,
-            name,
-            branches: list[Step | Branch] | None = None,
-            query_language=None,
-            input_path=None,
-            result_path=None,
-            output_path=None,
-            comment=None,
-            branch=None,
-            **kwargs,
+        name,
+        branches: list[Step | Branch] | None = None,
+        query_language=None,
+        input_path=None,
+        result_path=None,
+        output_path=None,
+        comment=None,
+        branch=None,
+        **kwargs,
     ):
-        super().__init__(name, "Parallel", query_language, input_path,
-                         result_path, output_path, comment, branch, **kwargs)
+        super().__init__(
+            name,
+            "Parallel",
+            query_language,
+            input_path,
+            result_path,
+            output_path,
+            comment,
+            branch,
+            **kwargs,
+        )
         if branches:
             self.branches = branches
         else:
@@ -455,12 +486,9 @@ class Parallel(Step):
         branch: Step | Branch
         for branch in self.branches:
             if isinstance(branch, Step):
-                self._content["Branches"].append(
-                    Branch(head=branch).definition
-                )
+                self._content["Branches"].append(Branch(head=branch).definition)
             if isinstance(branch, Branch):
-                self._content["Branches"].append(
-                    branch.definition)
+                self._content["Branches"].append(branch.definition)
 
     def __call__(self, event, context, *args, **kwds):
         return [_branch(event, context) for _branch in self.branches]
@@ -470,25 +498,26 @@ def parallel(*branches: list[Step | Branch], **kwargs) -> Parallel:
     names = []
     for step in branches:
         names.append(step.name)
-    name = '|'.join(names)
+    name = "|".join(names)
     return Parallel(name=name, branches=branches, **kwargs)
 
 
 class Wait(Step):
     def __init__(
-            self,
-            name: str,
-            seconds: Ref | str | float | int | None = None,
-            seconds_path: Ref | str | None = None,
-            timestamp_path: Ref | str | None = None,
-            comment: str | None = None,
-            branch: Branch | None = None,
-            **kwargs
+        self,
+        name: str,
+        seconds: Ref | str | float | int | None = None,
+        seconds_path: Ref | str | None = None,
+        timestamp_path: Ref | str | None = None,
+        comment: str | None = None,
+        branch: Branch | None = None,
+        **kwargs,
     ):
         super().__init__(name, type="Wait", comment=comment, branch=branch, **kwargs)
         if not seconds and not seconds_path and not timestamp_path:
             raise ValueError(
-                "seconds, seconds_path, and timestamp_path are None. At least one needs to be defined.")
+                "seconds, seconds_path, and timestamp_path are None. At least one needs to be defined."
+            )
 
         if seconds:
             self._content["Seconds"] = seconds
@@ -512,11 +541,19 @@ class Pass(Step):
         output: Any | None = None,
         comment: str | None = None,
         branch: str | None = None,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(
-            name, "Pass", query_language, input_path,
-            result_path, output_path, comment, branch, **kwargs)
+            name,
+            "Pass",
+            query_language,
+            input_path,
+            result_path,
+            output_path,
+            comment,
+            branch,
+            **kwargs,
+        )
 
         if result:
             self._content["Result"] = result
@@ -526,7 +563,9 @@ class Pass(Step):
 
     def __call__(self, event: dict, context: Any, *args, **kwargs):
         if "Result" in self._content:
-            return JSONPath().process_payload_template(self._content["Result"], event, context)
+            return JSONPath().process_payload_template(
+                self._content["Result"], event, context
+            )
         return event
 
 
@@ -543,11 +582,11 @@ class Fail(Step):
     end = True
 
     def __init__(
-            self,
-            name: str,
-            cause: Ref | str | None = None,
-            cause_path: Ref | str | None = None,
-            error_path: Ref | str | None = None
+        self,
+        name: str,
+        cause: Ref | str | None = None,
+        cause_path: Ref | str | None = None,
+        error_path: Ref | str | None = None,
     ):
         super().__init__(name, "Fail", None, None)
         if cause:
@@ -569,10 +608,11 @@ class StateMachine(Task):
         result_path=None,
         output_path=None,
         comment=None,
-        **kwargs
+        **kwargs,
     ):
         self.arn = AWSResource.AWS_STATES_STATE_MACHINE.value.replace(
-            "${STATE_MACHINE}", name)
+            "${STATE_MACHINE}", name
+        )
         self.sm_branch = branch
 
         if parameters is None:
@@ -589,7 +629,7 @@ class StateMachine(Task):
             result_path,
             output_path,
             comment,
-            **kwargs
+            **kwargs,
         )
         StateMachineContext.push_context_obj(self)
 
@@ -603,30 +643,38 @@ class StateMachine(Task):
 
 class StateMachineContext(ContextManager[StateMachine]):
     """Context manager specifically for StateMachine objects."""
+
     pass
 
 
 class LambdaFunction(Task):
-    def __init__(self, func: Callable | None = None,
-                 *,
-                 module_path: str | None = None,
-                 parameters: dict | None = None,
-                 query_language: str | None = None,
-                 input_path: str | None = None,
-                 result_path: str | None = None, output_path: str | None = None,
-                 comment: str | None = None,
-                 timeout: int = 900,
-                 memory_size: int = 256,
-                 tracing_mode: str = "Active",
-                 **kwargs):
+    def __init__(
+        self,
+        func: Callable | None = None,
+        *,
+        module_path: str | None = None,
+        parameters: dict | None = None,
+        query_language: str | None = None,
+        input_path: str | None = None,
+        result_path: str | None = None,
+        output_path: str | None = None,
+        comment: str | None = None,
+        timeout: int = 900,
+        memory_size: int = 256,
+        tracing_mode: str = "Active",
+        **kwargs,
+    ):
         self.func = func
         self.timeout = timeout
         self.memory_size = memory_size
         self.tracing_mode = tracing_mode
-        self.handler_path = (".".join(self.func.__module__.split(".")) + "." + self.func.__name__) or (module_path + "." + self.func.__name__)
+        self.handler_path = (
+            ".".join(self.func.__module__.split(".")) + "." + self.func.__name__
+        ) or (module_path + "." + self.func.__name__)
 
         resource = AWSResource.AWS_LAMBDA.value.replace(
-            "${FUNCTION_NAME}", self.func.__name__)
+            "${FUNCTION_NAME}", self.func.__name__
+        )
 
         super().__init__(
             self.func.__name__,
@@ -637,7 +685,7 @@ class LambdaFunction(Task):
             result_path,
             output_path,
             comment,
-            **kwargs
+            **kwargs,
         )
         self.func = func
         self.__qualname__ = self.func.__qualname__
@@ -656,6 +704,7 @@ class LambdaFunction(Task):
 
 class LambdaTaskContext(ContextManager[LambdaFunction]):
     """Context manager specifically for LambdaFunction objects."""
+
     pass
 
 

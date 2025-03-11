@@ -6,6 +6,8 @@ from airfunctions.context import ContextManager
 
 class TerraformContextManager(ContextManager):
     """Context manager for Terraform blocks"""
+
+
 #    _mapping = {}
 #
 #    def push_context_obj(cls, obj: Any) -> None:
@@ -58,12 +60,12 @@ class TerraformFunction:
 
         for k, v in kwds.items():
             if isinstance(v, TerraformFunction):
-                _kwds.append(f'{k} = {v.value}')
+                _kwds.append(f"{k} = {v.value}")
             else:
-                _kwds.append(f'{k} = {TerraformBlock._format_value(v)}')
-        
-        _args_str = ', '.join([str(arg) for arg in _args])
-        _kwds_str = ', '.join(_kwds)
+                _kwds.append(f"{k} = {TerraformBlock._format_value(v)}")
+
+        _args_str = ", ".join([str(arg) for arg in _args])
+        _kwds_str = ", ".join(_kwds)
 
         if _args_str and _kwds_str:
             self.value = f"{self.name}({_args_str}, {_kwds_str})"
@@ -83,8 +85,10 @@ def templatefile(path: str, map: Any):
 def jsonencode(value: dict):
     return TerraformFunction("jsonencode")(value)
 
+
 def filemd5(path: str):
     return TerraformFunction("filemd5")(path)
+
 
 class TerraformBlock:
     """Base class for all Terraform blocks"""
@@ -95,11 +99,13 @@ class TerraformBlock:
         TerraformContextManager().push_context_obj(self)
 
     def ref(self, attr_name: str) -> Ref:
-        if hasattr(self, 'block_name'):
+        if hasattr(self, "block_name"):
             return ref(f"{self.block_type}.{self.block_name}.{attr_name}")
-        elif getattr(self, 'block_type', None) == "data":
-            return ref(f"{self.block_type}.{self.resource_name}.{attr_name}")
-        elif hasattr(self, 'resource_name'):
+        elif getattr(self, "block_type", None) == "data":
+            return ref(
+                f"{self.block_type}.{self.resource_type}.{self.resource_name}.{attr_name}"
+            )
+        elif hasattr(self, "resource_name"):
             return ref(f"{self.resource_type}.{self.resource_name}.{attr_name}")
         else:
             return ref(f"{self.block_type}.{attr_name}")
@@ -115,13 +121,13 @@ class TerraformBlock:
         indent_str = "  " * indent
 
         # Handle different block types
-        if hasattr(self, 'resource_type') and hasattr(self, 'resource_name'):
+        if hasattr(self, "resource_type") and hasattr(self, "resource_name"):
             lines.append(
-                f"{indent_str}{self.block_type} \"{self.resource_type}\" \"{self.resource_name}\" {{")
-        elif hasattr(self, 'block_name'):
+                f'{indent_str}{self.block_type} "{self.resource_type}" "{self.resource_name}" {{'
+            )
+        elif hasattr(self, "block_name"):
             if self.block_name:
-                lines.append(
-                    f"{indent_str}{self.block_type} \"{self.block_name}\" {{")
+                lines.append(f'{indent_str}{self.block_type} "{self.block_name}" {{')
             else:
                 lines.append(f"{indent_str}{self.block_type} {{")
         else:
@@ -143,10 +149,12 @@ class TerraformBlock:
         """Format a value according to Terraform HCL syntax"""
         if isinstance(value, str):
             # Check if the string is a reference or an expression that shouldn't be quoted
-            if (value.startswith("${") and value.endswith("}")) or \
-               any(value.startswith(prefix) for prefix in ["var.", "local.", "module.", "data."]):
+            if (value.startswith("${") and value.endswith("}")) or any(
+                value.startswith(prefix)
+                for prefix in ["var.", "local.", "module.", "data."]
+            ):
                 return value
-            return f"\"{value}\""
+            return f'"{value}"'
         elif isinstance(value, Ref):
             return str(value)
         elif isinstance(value, TerraformFunction):
@@ -159,9 +167,7 @@ class TerraformBlock:
             elements = [cls._format_value(elem) for elem in value]
             return f"[{', '.join(elements)}]"
         elif isinstance(value, dict):
-            pairs = [
-                f"{k} = {cls._format_value(v)}" for k, v in value.items()
-            ]
+            pairs = [f"{k} = {cls._format_value(v)}" for k, v in value.items()]
             return f"{{{', '.join(pairs)}}}"
         elif value is None:
             return "null"
@@ -332,7 +338,7 @@ class TerraformConfiguration:
 
     def save(self, filename):
         """Save the configuration to a file"""
-        with open(filename, 'w') as f:
+        with open(filename, "w") as f:
             f.write(self.to_string())
 
 
@@ -355,7 +361,7 @@ class TerraformBlocksCollection:
         """Save the collection to a file"""
         # Create the directory if it doesn't exist
         os.makedirs(os.path.dirname(filename), exist_ok=True)
-        with open(filename, 'w') as f:
+        with open(filename, "w") as f:
             f.write(self.to_string())
 
 
@@ -365,25 +371,25 @@ if __name__ == "__main__":
     tf = TerraformConfiguration()
 
     # Add terraform configuration block
-    terraform_config = TerraformConfig(
-        required_version=">=1.3.0"
-    )
+    terraform_config = TerraformConfig(required_version=">=1.3.0")
 
     # Add required providers
     required_providers = Required_Providers()
 
     # Add provider configurations to required_providers
-    aws_provider_config = Provider_Config("aws",
-                                          source="hashicorp/aws",
-                                          version="~> 4.0")
+    aws_provider_config = Provider_Config(
+        "aws", source="hashicorp/aws", version="~> 4.0"
+    )
     required_providers.add_block(aws_provider_config)
 
     # Add backend configuration
-    backend = Backend("s3",
-                      bucket="my-terraform-state",
-                      key="example/terraform.tfstate",
-                      region="us-west-2",
-                      encrypt=True)
+    backend = Backend(
+        "s3",
+        bucket="my-terraform-state",
+        key="example/terraform.tfstate",
+        region="us-west-2",
+        encrypt=True,
+    )
 
     # Add the backend to the terraform configuration block
     terraform_config.add_block(backend)
@@ -393,76 +399,80 @@ if __name__ == "__main__":
     tf.add(terraform_config)
 
     # Add provider
-    provider = Provider("aws",
-                        region="us-west-2",
-                        profile="default")
+    provider = Provider("aws", region="us-west-2", profile="default")
     tf.add(provider)
 
     # Add variables
-    vpc_cidr = Variable("vpc_cidr",
-                        type="string",
-                        default="10.0.0.0/16",
-                        description="CIDR block for the VPC")
+    vpc_cidr = Variable(
+        "vpc_cidr",
+        type="string",
+        default="10.0.0.0/16",
+        description="CIDR block for the VPC",
+    )
     tf.add(vpc_cidr)
 
-    account_id = Variable("account_id",
-                          type="string",
-                          description="AWS Account ID")
+    account_id = Variable("account_id", type="string", description="AWS Account ID")
     tf.add(account_id)
 
-    provider_name = Variable("provider_name",
-                             type="string",
-                             description="SAML provider name")
+    provider_name = Variable(
+        "provider_name", type="string", description="SAML provider name"
+    )
     tf.add(provider_name)
 
-    trusted_role_arn = Variable("trusted_role_arn",
-                                type="string",
-                                description="Trusted role ARN")
+    trusted_role_arn = Variable(
+        "trusted_role_arn", type="string", description="Trusted role ARN"
+    )
     tf.add(trusted_role_arn)
 
     # Example of IAM policy document with nested blocks
     # This demonstrates how to create complex nested configurations
-    iam_policy = Data("aws_iam_policy_document",
-                      "event_stream_bucket_role_assume_role_policy")
+    iam_policy = Data(
+        "aws_iam_policy_document", "event_stream_bucket_role_assume_role_policy"
+    )
 
     # Create a statement block with attributes and nested blocks
-    statement = ConfigBlock.nested("statement",
-                                   actions=["sts:AssumeRole"])
+    statement = ConfigBlock.nested("statement", actions=["sts:AssumeRole"])
 
     # Add service principal nested block to statement
-    service_principal = ConfigBlock.nested("principals",
-                                           type="Service",
-                                           identifiers=["firehose.amazonaws.com"])
+    service_principal = ConfigBlock.nested(
+        "principals", type="Service", identifiers=["firehose.amazonaws.com"]
+    )
     statement.add_block(service_principal)
 
     # Add AWS principal nested block to statement
-    aws_principal = ConfigBlock.nested("principals",
-                                       type="AWS",
-                                       identifiers=["${var.trusted_role_arn}"])
+    aws_principal = ConfigBlock.nested(
+        "principals", type="AWS", identifiers=["${var.trusted_role_arn}"]
+    )
     statement.add_block(aws_principal)
 
     # Add Federated principal nested block to statement
-    federated_principal = ConfigBlock.nested("principals",
-                                             type="Federated",
-                                             identifiers=[
-                                                 "arn:aws:iam::${var.account_id}:saml-provider/${var.provider_name}",
-                                                 "cognito-identity.amazonaws.com"
-                                             ])
+    federated_principal = ConfigBlock.nested(
+        "principals",
+        type="Federated",
+        identifiers=[
+            "arn:aws:iam::${var.account_id}:saml-provider/${var.provider_name}",
+            "cognito-identity.amazonaws.com",
+        ],
+    )
     statement.add_block(federated_principal)
 
     # Add the statement block to the IAM policy
     iam_policy.add_block(statement)
 
     # Add a second statement to demonstrate multiple blocks of the same type
-    statement2 = ConfigBlock.nested("statement",
-                                    actions=["s3:GetObject", "s3:PutObject"],
-                                    resources=["arn:aws:s3:::example-bucket/*"])
+    statement2 = ConfigBlock.nested(
+        "statement",
+        actions=["s3:GetObject", "s3:PutObject"],
+        resources=["arn:aws:s3:::example-bucket/*"],
+    )
 
     # Add condition block to the second statement
-    condition = ConfigBlock.nested("condition",
-                                   test="StringEquals",
-                                   variable="aws:SourceAccount",
-                                   values=["${var.account_id}"])
+    condition = ConfigBlock.nested(
+        "condition",
+        test="StringEquals",
+        variable="aws:SourceAccount",
+        values=["${var.account_id}"],
+    )
     statement2.add_block(condition)
 
     # Add the second statement block to the IAM policy
@@ -472,9 +482,9 @@ if __name__ == "__main__":
     tf.add(iam_policy)
 
     # Add an S3 bucket resource
-    s3_bucket = Resource("aws_s3_bucket", "example",
-                         bucket="my-example-bucket",
-                         force_destroy=True)
+    s3_bucket = Resource(
+        "aws_s3_bucket", "example", bucket="my-example-bucket", force_destroy=True
+    )
 
     # Add server_side_encryption_configuration nested block
     encryption = ConfigBlock.nested("server_side_encryption_configuration")
@@ -483,8 +493,9 @@ if __name__ == "__main__":
     encryption_rule = ConfigBlock.nested("rule")
 
     # Add apply_server_side_encryption_by_default nested block within rule
-    encryption_default = ConfigBlock.nested("apply_server_side_encryption_by_default",
-                                            sse_algorithm="AES256")
+    encryption_default = ConfigBlock.nested(
+        "apply_server_side_encryption_by_default", sse_algorithm="AES256"
+    )
 
     # Build the nested structure
     encryption_rule.add_block(encryption_default)
