@@ -1,40 +1,50 @@
-from dataclasses import dataclass
+import json
+import os
 
 
-def singleton(class_):
-    instances = {}
+class Config:
+    _instance = None
 
-    def getinstance(*args, **kwargs):
-        if class_ not in instances:
-            instances[class_] = class_(*args, **kwargs)
-        return instances[class_]
+    def __new__(cls):
+        """
+        Override the __new__ method to ensure only one instance is created.
+        """
+        if cls._instance is None:
+            cls._instance = super(Config, cls).__new__(cls)
+            cls._instance._initialize_defaults()
+        return cls._instance
 
-    return getinstance
+    def _initialize_defaults(self):
+        """
+        Set up default values for all configuration settings.
+        """
+        self.resource_prefix = ""
+        self.resource_suffix = ""
+        self.terraform_dir = os.environ.get("TERRAFORM_DIR", "./terraform")
+        self.environment = "dev"
+        self.lambda_module_version = "7.20.1"
+        self.lambda_module_source = "terraform-aws-modules/lambda/aws"
+        self.aws_region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or "us-east-1"
 
+    def reset(self):
+        self._initialize_defaults()
 
-@singleton
-@dataclass
-class AirFunctionsConfig:
-    aws_region: str = "${AWS_REGION}"
-    aws_account_id: str = "${AWS_ACCOUNT_ID}"
-    resource_prefix: str = ""
-    resource_suffix: str = ""
-    environment: str = ""
-    module_path: str = ""
-    lambda_module_version: str = "7.20.1"
-    lambda_module_source: str = "terraform-aws-modules/lambda/aws"
+    def load_from_file(self, filepath):
+        """
+        Load configuration from a file (JSON, YAML, etc.).
 
-    def set(self, attr_name, value):
-        setattr(self, attr_name, value)
+        This is a placeholder - you would implement file loading logic based on your needs.
+        """
+        with open(filepath, 'r') as f:
+            config_data = json.load(f)
+            for key, value in config_data.items():
+                if hasattr(self, key):
+                    setattr(self, key, value)
 
-if __name__ == "__main__":
-    config = AirFunctionsConfig()
-    import os
+    def save_to_file(self, filepath):
+        """
+        Save current configuration to a file.
 
-    print(
-        config
-        == AirFunctionsConfig(
-            aws_region=os.environ.get("AWS_REGION"),
-            aws_account_id=os.environ.get("AWS_ACCOUNT_ID"),
-        )
-    )
+        This is a placeholder - you would implement file saving logic based on your needs.
+        """
+        json.dump(self.__dict__, open(filepath, "w"))

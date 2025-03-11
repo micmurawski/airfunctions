@@ -4,34 +4,20 @@ import subprocess
 import sys
 from pathlib import Path
 
-from airfunctions.config import AirFunctionsConfig
+from airfunctions.config import Config
 from airfunctions.poetry_utils import get_lambda_build_config
 from airfunctions.steps import *
-from airfunctions.terrapy import (
-    Backend,
-    ConfigBlock,
-    Data,
-    Locals,
-    Module,
-    Output,
-    Provider,
-    Provider_Config,
-    Required_Providers,
-    Resource,
-    TerraformBlocksCollection,
-    TerraformConfig,
-    TerraformConfiguration,
-    Variable,
-    filemd5,
-)
+from airfunctions.terrapy import (Backend, ConfigBlock, Data, Locals, Module,
+                                  Output, Provider, Provider_Config,
+                                  Required_Providers, Resource,
+                                  TerraformBlocksCollection, TerraformConfig,
+                                  TerraformConfiguration, Variable, filemd5)
 from airfunctions.terrapy import format as tf_format
 from airfunctions.terrapy import local, ref, templatefile
 
-airfunctions_config = AirFunctionsConfig()
-
 PYTHON_RUNTIME = f"python{sys.version_info.major}.{sys.version_info.minor}"
-LAMBDA_MODULE_VERSION = airfunctions_config.lambda_module_version
-LAMBDA_MODULE_SOURCE = airfunctions_config.lambda_module_source
+LAMBDA_MODULE_VERSION = Config().lambda_module_version
+LAMBDA_MODULE_SOURCE = Config().lambda_module_source
 
 
 def save_dict_to_json_file(data: dict, file_path: str):
@@ -40,11 +26,18 @@ def save_dict_to_json_file(data: dict, file_path: str):
         json.dump(data, f)
 
 
-class Bundler:
+class TerraformBundler:
     def __init__(self):
         self.tasks = []
         self.lambda_functions = {}
         self.state_machines = {}
+
+    def validate(self):
+        self.collect_resources()
+        self.to_terraform()
+        cwd = Config().terraform_dir
+        subprocess.run(["terraform", "init", "-backend=false"], cwd=cwd)
+        subprocess.run(["terraform", "validate"], cwd=cwd)
 
     def apply(self):
         self.collect_resources()
@@ -53,17 +46,16 @@ class Bundler:
         self.terraform_apply()
 
     def terraform_apply(self):
-        cwd = "./terraform"
+        cwd = Config().terraform_dir
         subprocess.run(["terraform", "init"], cwd=cwd)
         subprocess.run(["terraform", "plan", "-out=plan.out"], cwd=cwd)
-        subprocess.run(["terraform", "apply", "-auto-approve", "plan.out"], cwd=cwd)
+        subprocess.run(
+            ["terraform", "apply", "-auto-approve", "plan.out"], cwd=cwd)
         os.remove(os.path.join(cwd, "plan.out"))
 
-    def add_task(self, task):
-        self.tasks.append(task)
-
     def build_lambdas(self):
-        process = subprocess.run([sys.executable, "-m", "poetry", "build-lambda"])
+        process = subprocess.run(
+            [sys.executable, "-m", "poetry", "build-lambda"])
         print(process)
 
     def collect_resources(self):
@@ -88,11 +80,11 @@ class Bundler:
             "local",
             # bucket="my-terraform-state",
             # key="example/terraform.tfstate",
-            ##region=airfunctions_config.aws_region,
+            # region=airfunctions_config.aws_region,
             # encrypt=True,
         )
 
-        # terraform_config.add_block(backend_config)
+        terraform_config.add_block(backend_config)
         provider = Provider("aws", region="us-east-1")
 
         backend.add(terraform_config)
@@ -108,11 +100,13 @@ class Bundler:
         bucket = Resource(
             "aws_s3_bucket",
             "assets_bucket",
-            bucket=tf_format("%s%s-bucket%s", local.prefix, "assets", local.suffix),
+            bucket=tf_format("%s%s-bucket%s", local.prefix,
+                             "assets", local.suffix),
             force_destroy=True,
             tags=local.tags,
         )
-        lambda_layer_artifact_path = ".." / Path(lambda_config["layer-artifact-path"])
+        lambda_layer_artifact_path = ".." / \
+            Path(lambda_config["layer-artifact-path"])
         aws_s3_bucket_object = Resource(
             "aws_s3_object",
             "lambda_layer_code",
@@ -128,7 +122,8 @@ class Bundler:
             source=LAMBDA_MODULE_SOURCE,
             version=LAMBDA_MODULE_VERSION,
             create_layer=True,
-            layer_name=tf_format("%s-%slayer%s", local.prefix, "lambda", local.suffix),
+            layer_name=tf_format(
+                "%s-%slayer%s", local.prefix, "lambda", local.suffix),
             compatible_runtimes=[PYTHON_RUNTIME],
             create_package=False,
             s3_existing_package={
@@ -195,7 +190,8 @@ class Bundler:
                 "aws_iam_policy_document",
                 "role_assume_role_policy_{}".format(state_machine.name),
             )
-            statement = ConfigBlock.nested("statement", actions=["sts:AssumeRole"])
+            statement = ConfigBlock.nested(
+                "statement", actions=["sts:AssumeRole"])
 
             service_principal = ConfigBlock.nested(
                 "principals", type="Service", identifiers=["states.amazonaws.com"]
@@ -259,9 +255,9 @@ class Bundler:
             main.add(state_machine_resource)
 
         locals_block = Locals(
-            prefix=airfunctions_config.resource_prefix,
-            suffix=airfunctions_config.resource_suffix,
-            environment=airfunctions_config.environment,
+            prefix=Config().resource_prefix,
+            suffix=Config().resource_suffix,
+            environment=Config().environment,
             lambda_arns=lambda_arns,
             tags={},
         )
@@ -294,6 +290,6 @@ if __name__ == "__main__":
     branch = branch_1 >> branch_2
     branch.to_statemachine("example-1")
 
-    airfunctions_config.set("resource_prefix", "micmur-test-")
-    bundler = Bundler()
-    bundler.apply()
+    Config().resource_prefix = "micmur-test-"
+    bundler = TerraformBundler()
+    bundler.validate()

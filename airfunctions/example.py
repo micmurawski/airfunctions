@@ -1,5 +1,5 @@
-from airfunctions.bundle import Bundler, AirFunctionsConfig
-from airfunctions.steps import Pass, lambda_task, Choice
+from airfunctions.bundle import Config, TerraformBundler
+from airfunctions.steps import Choice, Pass, lambda_task
 
 
 @lambda_task
@@ -56,7 +56,7 @@ if __name__ == "__main__":
     branch = branch_1 >> branch_2
     branch.to_statemachine("example-1")
 
-    AirFunctionsConfig().set("resource_prefix", "micmur-test-")
-    bundler = Bundler()
-    bundler.to_terraform()
-    #bundler.apply()
+    Config().resource_prefix = "project-name-"
+    bundler = TerraformBundler()
+    bundler.validate()
+    bundler.apply()

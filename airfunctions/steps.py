@@ -1,3 +1,5 @@
+import inspect
+import os
 from collections import deque
 from copy import deepcopy
 from dataclasses import dataclass
@@ -8,6 +10,12 @@ from typing import Any, Callable
 from airfunctions.conditions import Condition, Ref
 from airfunctions.context import ContextManager
 from airfunctions.jsonpath import JSONPath
+
+
+def get_handler_path(func: Callable) -> str:
+    file_path = inspect.getfile(func).replace(
+        os.getcwd(), "", 1).replace(".py", "")
+    return ".".join(list(Path(file_path).parts[1:]) + [func.__name__])
 
 
 class AWSResource(str, Enum):
@@ -486,7 +494,8 @@ class Parallel(Step):
         branch: Step | Branch
         for branch in self.branches:
             if isinstance(branch, Step):
-                self._content["Branches"].append(Branch(head=branch).definition)
+                self._content["Branches"].append(
+                    Branch(head=branch).definition)
             if isinstance(branch, Branch):
                 self._content["Branches"].append(branch.definition)
 
@@ -669,8 +678,12 @@ class LambdaFunction(Task):
         self.memory_size = memory_size
         self.tracing_mode = tracing_mode
         self.handler_path = (
-            ".".join(self.func.__module__.split(".")) + "." + self.func.__name__
+            ".".join(self.func.__module__.split(".")) +
+            "." + self.func.__name__
         ) or (module_path + "." + self.func.__name__)
+
+        if "__main__" in self.handler_path:
+            self.handler_path = get_handler_path(self.func)
 
         resource = AWSResource.AWS_LAMBDA.value.replace(
             "${FUNCTION_NAME}", self.func.__name__
@@ -712,38 +725,3 @@ def lambda_task(func: Callable, **kwargs) -> LambdaFunction:
     _lambda_function = LambdaFunction(func, **kwargs)
     LambdaTaskContext.push_context_obj(_lambda_function)
     return _lambda_function
-
-
-@lambda_task
-def step_1(event, context):
-    return event
-
-
-@lambda_task
-def step_2(event, context):
-    return event
-
-
-@lambda_task
-def step_3(event, context):
-    return event
-
-
-@lambda_task
-def step_4(event, context):
-    return event
-
-
-@lambda_task
-def step_5(event, context):
-    return event
-
-
-@lambda_task
-def step_6(event, context):
-    return event
-
-
-@lambda_task
-def step_7(event, context):
-    return event
