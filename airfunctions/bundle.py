@@ -269,27 +269,3 @@ class TerraformBundler:
         main.save("terraform/main.tf")
         data.save("terraform/data.tf")
         subprocess.run(["terraform", "fmt", "--recursive"], cwd="./terraform")
-
-
-if __name__ == "__main__":
-    con1 = (step_1.output("a") == 10) | (step_1.output("b") == 20)
-    branch_1 = (
-        step_1
-        >> Pass("pass1")
-        >> Choice("Choice#1", default=step_2).choose(con1, step_3)
-    )
-    branch_1 = branch_1["Choice#1"].choice() >> Pass("next")
-    branch_2 = (
-        step_4
-        >> [
-            step_5,
-            step_6 >> step_7,
-        ]
-        >> Pass("pass2", input_path="$[0]", result={"output.$": "$.a"})
-    )
-    branch = branch_1 >> branch_2
-    branch.to_statemachine("example-1")
-
-    Config().resource_prefix = "micmur-test-"
-    bundler = TerraformBundler()
-    bundler.validate()
