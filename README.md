@@ -49,9 +49,22 @@ workflow_2 = (
     >> Pass("pass2", input_path="$[0]", result={"output.$": "$.a"})
 )
 workflow_final = workflow_1 >> workflow_2
+
+```
+
+## Test
+```python
+assert {'output': 10} == workflow_final({"a": 10}, None)
+```
+## Generate definition
+```python
+print(workflow_final.definition)
+```
+## Deploy
+```python
 # Deploy to AWS Step Functions
-workflow_final.to_statemachine("my-workflow")
 # Configure and deploy using Terraform
+workflow_final.to_statemachine("my-workflow")
 Config().resource_prefix = "my-project-"
 bundler = TerraformBundler()
 bundler.validate()
