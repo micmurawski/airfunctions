@@ -79,6 +79,7 @@ bundler.apply()
 - **Conditional Logic**: Build branching workflows using `Choice` steps
 - **Parallel Execution**: Run steps in parallel using list syntax
 - **State Management**: Access task outputs using the `.output()` method
+- **Local Testing**: [States language](https://states-language.net) was reproduced in [python logic](./airfunctions/jsonata.py) to enable testing locally 
 
 ## Installation
 
